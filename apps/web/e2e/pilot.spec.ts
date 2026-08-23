@@ -34,13 +34,20 @@ test("mobile onboarding locks the page and keeps actions anchored", async ({
 
   const layout = await page.evaluate(() => {
     const panelElement = document.querySelector<HTMLElement>(".onboarding-panel");
+    const backdropElement = document.querySelector<HTMLElement>(
+      ".onboarding-backdrop",
+    );
     const footerElement = document.querySelector<HTMLElement>(
       ".onboarding-panel > footer",
     );
-    if (!panelElement || !footerElement) throw new Error("Onboarding panel is missing");
+    if (!panelElement || !backdropElement || !footerElement) {
+      throw new Error("Onboarding panel is missing");
+    }
+    const backdropRect = backdropElement.getBoundingClientRect();
     const panelRect = panelElement.getBoundingClientRect();
     const footerRect = footerElement.getBoundingClientRect();
     return {
+      backdropBottomGap: window.innerHeight - backdropRect.bottom,
       footerBottomGap: panelRect.bottom - footerRect.bottom,
       scrollY: window.scrollY,
     };
@@ -48,6 +55,7 @@ test("mobile onboarding locks the page and keeps actions anchored", async ({
   const scrolledFooter = await footer.boundingBox();
 
   expect(scrolledFooter?.y).toBeCloseTo(initialFooter!.y, 0);
+  expect(layout.backdropBottomGap).toBeLessThanOrEqual(1);
   expect(layout.footerBottomGap).toBeLessThanOrEqual(2);
   expect(layout.scrollY).toBe(0);
 });
@@ -98,4 +106,31 @@ test("mobile drawers remain usable without horizontal overflow", async ({
     clientWidth: document.documentElement.clientWidth,
   }));
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth + 1);
+});
+
+test("mobile agent shell keeps the root viewport locked", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name === "desktop-chromium");
+  await finishOnboarding(page);
+
+  await expect(page.locator("body")).toHaveCSS("position", "fixed");
+  await page.evaluate(() => window.scrollTo({ top: 160 }));
+
+  const layout = await page.evaluate(() => {
+    const shell = document.querySelector<HTMLElement>(".stage6-shell");
+    const composer = document.querySelector<HTMLElement>(".composer-inner");
+    if (!shell || !composer) throw new Error("Agent shell is missing");
+    const shellRect = shell.getBoundingClientRect();
+    return {
+      composerHeight: composer.getBoundingClientRect().height,
+      scrollY: window.scrollY,
+      shellBottom: shellRect.bottom,
+      viewportHeight: window.innerHeight,
+    };
+  });
+
+  expect(layout.scrollY).toBe(0);
+  expect(layout.shellBottom).toBeCloseTo(layout.viewportHeight, 0);
+  expect(layout.composerHeight).toBeGreaterThanOrEqual(76);
 });
