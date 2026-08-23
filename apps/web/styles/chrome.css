@@ -1,0 +1,653 @@
+.app-chrome {
+  position: relative;
+  min-height: 100svh;
+  overflow-x: clip;
+  background: var(--paper);
+}
+
+.ambient-grid {
+  position: fixed;
+  z-index: 0;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.42;
+  background-image:
+    linear-gradient(rgba(16, 17, 18, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(16, 17, 18, 0.045) 1px, transparent 1px),
+    linear-gradient(rgba(16, 17, 18, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(16, 17, 18, 0.025) 1px, transparent 1px);
+  background-position: -1px -1px;
+  background-size: 72px 72px, 72px 72px, 18px 18px, 18px 18px;
+  mask-image: linear-gradient(90deg, transparent 0, #000 8%, #000 92%, transparent);
+}
+
+.app-rail {
+  position: fixed;
+  z-index: 80;
+  inset: 0 auto 0 0;
+  display: flex;
+  width: var(--rail-width);
+  flex-direction: column;
+  border-right: 1px solid var(--line-inverse);
+  background: var(--ink);
+  color: var(--white);
+}
+
+.app-rail-brand {
+  display: grid;
+  height: 98px;
+  place-items: center;
+  border-bottom: 1px solid var(--line-inverse);
+  background: var(--signal-yellow);
+  color: var(--ink);
+  font-family: var(--font-display);
+  line-height: 1;
+}
+
+.app-rail-brand span {
+  align-self: end;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+}
+
+.app-rail-brand b {
+  align-self: start;
+  font-size: 20px;
+  letter-spacing: -0.12em;
+  writing-mode: vertical-rl;
+}
+
+.app-rail nav {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.app-rail nav a {
+  position: relative;
+  display: grid;
+  min-height: 104px;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--line-inverse);
+  color: var(--gray-300);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.app-rail nav a::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--signal-yellow);
+  content: "";
+  transform: scaleY(0);
+  transform-origin: bottom;
+  transition: transform var(--transition-fast);
+}
+
+.app-rail nav a small,
+.app-rail nav a span {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.1em;
+}
+
+.app-rail nav a:hover,
+.app-rail nav a.active {
+  background: var(--ink-soft);
+  color: var(--white);
+}
+
+.app-rail nav a:hover {
+  transform: translateX(2px);
+}
+
+.app-rail nav a.active::before {
+  transform: scaleY(1);
+}
+
+.app-rail nav a.active svg {
+  color: var(--signal-yellow);
+}
+
+.app-rail-tail {
+  display: grid;
+  height: 88px;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  border-top: 1px solid var(--line-inverse);
+  color: var(--signal-yellow);
+}
+
+.app-rail-tail span {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+}
+
+.chrome-frame {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  min-height: 100svh;
+  margin-left: var(--rail-width);
+}
+
+.calibration-strip {
+  position: relative;
+  z-index: 45;
+  display: flex;
+  height: var(--calibration-height);
+  align-items: center;
+  gap: 12px;
+  padding: 0 18px;
+  overflow: hidden;
+  border-bottom: 1px solid #000;
+  background: var(--signal-yellow);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+}
+
+.calibration-strip i {
+  height: 1px;
+  flex: 1;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--ink) 0 8px,
+    transparent 8px 13px
+  );
+}
+
+.masthead {
+  position: sticky;
+  z-index: 44;
+  top: 0;
+  display: grid;
+  height: var(--masthead-height);
+  grid-template-columns: 238px minmax(170px, 1fr) auto;
+  align-items: stretch;
+  border-bottom: 1px solid var(--ink);
+  background: rgba(250, 250, 246, 0.97);
+  backdrop-filter: blur(12px);
+}
+
+.mast-mobile-actions {
+  display: none;
+}
+
+.brand {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 11px;
+  padding: 0 18px;
+  border-right: 1px solid var(--line);
+}
+
+.brand-seal {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  grid-template-columns: 1fr 1fr;
+  border: 2px solid var(--ink);
+  background: var(--ink);
+  color: var(--white);
+  clip-path: polygon(0 0, 100% 0, 100% 78%, 78% 100%, 0 100%);
+}
+
+.brand-seal b {
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.brand-seal b:last-child {
+  background: var(--signal-yellow);
+  color: var(--ink);
+}
+
+.brand-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.brand-copy strong {
+  overflow: hidden;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-stretch: condensed;
+  letter-spacing: 0.08em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brand-copy small {
+  overflow: hidden;
+  color: var(--gray-500);
+  font-family: var(--font-mono);
+  font-size: 7px;
+  letter-spacing: 0.1em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mast-context {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  align-content: center;
+  gap: 2px;
+  padding: 0 24px;
+  overflow: hidden;
+}
+
+.mast-context::after {
+  position: absolute;
+  right: 16px;
+  bottom: 0;
+  width: 54px;
+  height: 5px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--ink) 0 2px,
+    transparent 2px 5px
+  );
+  content: "";
+}
+
+.mast-context span {
+  color: var(--gray-500);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+}
+
+.mast-context b {
+  overflow: hidden;
+  font-family: var(--font-display);
+  font-size: 18px;
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mast-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  border-left: 1px solid var(--line);
+}
+
+.mast-code {
+  padding: 0 15px;
+  color: var(--gray-500);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+}
+
+.ledger-link,
+.back-to-agent,
+.admin-role-mark {
+  display: inline-flex;
+  height: 100%;
+  align-items: center;
+  gap: 7px;
+  padding: 0 16px;
+  border-left: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.ledger-link:hover,
+.back-to-agent:hover {
+  background: var(--signal-yellow);
+}
+
+.system-state {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  gap: 9px;
+  padding: 0 18px;
+  border-left: 1px solid var(--line);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.system-state > span:last-child {
+  display: grid;
+  gap: 1px;
+}
+
+.system-state small {
+  color: var(--gray-500);
+  font-size: 8px;
+  font-weight: 400;
+}
+
+.signal {
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--gray-600);
+  border-radius: 50%;
+  background: var(--gray-300);
+}
+
+.signal.online {
+  border-color: var(--success);
+  background: var(--success);
+  box-shadow: 0 0 0 3px rgba(0, 184, 120, 0.12);
+}
+
+.chrome-body {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+}
+
+.mobile-global-menu {
+  position: relative;
+}
+
+.mobile-global-menu summary {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid var(--ink);
+  list-style: none;
+}
+
+.mobile-global-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.mobile-global-menu[open] summary {
+  background: var(--signal-yellow);
+}
+
+.mobile-global-menu nav {
+  position: fixed;
+  z-index: 120;
+  top: calc(var(--calibration-height) + var(--masthead-height) - 1px);
+  left: 8px;
+  display: grid;
+  width: min(320px, calc(100vw - 16px));
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  box-shadow: 7px 7px 0 rgba(245, 255, 0, 0.9);
+}
+
+.mobile-global-menu nav a {
+  display: grid;
+  min-height: 52px;
+  grid-template-columns: 32px 24px 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line-inverse);
+  color: var(--white);
+  font-family: var(--font-display);
+  font-size: 13px;
+  letter-spacing: 0.05em;
+}
+
+.mobile-global-menu nav a span {
+  color: var(--gray-400);
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
+
+.mobile-global-menu nav a.active {
+  background: var(--signal-yellow);
+  color: var(--ink);
+}
+
+.mobile-global-menu nav a.active span {
+  color: var(--ink);
+}
+
+/* Second art direction: quiet editorial chrome, not a dashboard. */
+.ambient-grid {
+  opacity: 0.2;
+  background-image:
+    linear-gradient(rgba(23, 24, 22, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(23, 24, 22, 0.06) 1px, transparent 1px);
+  background-size: 96px 96px;
+  mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+}
+
+.app-rail {
+  border-color: var(--ink);
+  background: var(--paper-bright);
+  color: var(--ink);
+}
+
+.app-rail-brand {
+  height: 84px;
+  border-color: var(--ink);
+  background: var(--paper-bright);
+  color: var(--ink);
+}
+
+.app-rail-brand span {
+  color: var(--gray-500);
+}
+
+.app-rail-brand b {
+  font-size: 18px;
+  letter-spacing: -0.08em;
+}
+
+.app-rail nav a {
+  min-height: 94px;
+  border-color: rgba(23, 24, 22, 0.14);
+  color: var(--gray-300);
+}
+
+.app-rail nav a::before {
+  width: 3px;
+}
+
+.app-rail nav a:hover,
+.app-rail nav a.active {
+  background: #dedfda;
+  color: var(--ink);
+}
+
+.app-rail nav a:hover {
+  transform: none;
+}
+
+.app-rail nav a.active svg {
+  color: var(--ink);
+}
+
+.app-rail-tail {
+  height: 72px;
+  border-color: var(--ink);
+  color: var(--gray-500);
+}
+
+.calibration-strip {
+  gap: 10px;
+  padding: 0 14px;
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--gray-200);
+  font-size: 7px;
+  letter-spacing: 0.16em;
+}
+
+.calibration-strip i {
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.42) 0 5px,
+    transparent 5px 12px
+  );
+}
+
+.calibration-strip::after {
+  width: 46px;
+  height: 100%;
+  margin-right: -14px;
+  background: var(--signal-yellow);
+  content: "";
+}
+
+.masthead {
+  grid-template-columns: 220px minmax(150px, 1fr) auto;
+  background: rgba(247, 247, 243, 0.98);
+  backdrop-filter: none;
+}
+
+.brand {
+  gap: 12px;
+  padding: 0 16px;
+  border-color: rgba(23, 24, 22, 0.22);
+}
+
+.brand-seal {
+  width: 34px;
+  height: 40px;
+  border-width: 1px;
+  background: var(--ink);
+  clip-path: none;
+  box-shadow: inset 0 -4px 0 var(--signal-yellow);
+}
+
+.brand-seal b {
+  padding-bottom: 3px;
+  font-size: 12px;
+}
+
+.brand-seal b:last-child {
+  background: transparent;
+  color: var(--white);
+}
+
+.brand-copy strong {
+  font-size: 14px;
+  letter-spacing: 0.04em;
+}
+
+.brand-copy small {
+  color: var(--gray-400);
+  font-size: 6px;
+}
+
+.mast-context {
+  gap: 1px;
+  padding: 0 22px;
+}
+
+.mast-context::after {
+  right: 22px;
+  width: 36px;
+  height: 2px;
+  background: var(--ink);
+}
+
+.mast-context span {
+  font-size: 7px;
+  letter-spacing: 0.13em;
+}
+
+.mast-context b {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.mast-actions,
+.identity-shell {
+  border-color: rgba(23, 24, 22, 0.2);
+}
+
+.mast-code {
+  color: var(--gray-400);
+  font-size: 7px;
+}
+
+.ledger-link,
+.back-to-agent,
+.admin-role-mark {
+  padding: 0 14px;
+  border-color: rgba(23, 24, 22, 0.2);
+  font-size: 8px;
+}
+
+.ledger-link:hover,
+.back-to-agent:hover {
+  background: var(--ink);
+  color: var(--white);
+}
+
+.system-state {
+  gap: 8px;
+  padding: 0 14px;
+  border-color: rgba(23, 24, 22, 0.2);
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.system-state small {
+  font-size: 7px;
+}
+
+.signal.online {
+  background: var(--ink);
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px var(--signal-yellow);
+}
+
+.mobile-global-menu summary {
+  border-color: rgba(23, 24, 22, 0.5);
+  background: transparent;
+}
+
+.mobile-global-menu[open] summary {
+  background: var(--ink);
+  color: var(--white);
+}
+
+.mobile-global-menu nav {
+  border: 0;
+  background: var(--paper-bright);
+  box-shadow: 0 4px 0 var(--ink);
+}
+
+.mobile-global-menu nav a {
+  min-height: 56px;
+  border-color: rgba(23, 24, 22, 0.16);
+  color: var(--ink);
+}
+
+.mobile-global-menu nav a.active {
+  background: #dedfda;
+  color: var(--ink);
+  box-shadow: inset 3px 0 0 var(--signal-yellow);
+}

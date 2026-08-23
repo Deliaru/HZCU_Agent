@@ -1,0 +1,88 @@
+name: hzcu-agent-pilot
+
+x-api-environment: &api-environment
+  HZCU_ENVIRONMENT: production
+  HZCU_DATABASE_URL: sqlite+aiosqlite:////app/data/hzcu_agent.db
+  HZCU_SNAPSHOT_DIRECTORY: /app/data/snapshots
+  HZCU_LOG_FORMAT: json
+  HZCU_MODEL_PROVIDER: ${HZCU_MODEL_PROVIDER:-demo}
+  HZCU_OPENAI_API_KEY: ${HZCU_OPENAI_API_KEY:-}
+  HZCU_OPENAI_BASE_URL: ${HZCU_OPENAI_BASE_URL:-}
+  HZCU_AGENT_MODEL: ${HZCU_AGENT_MODEL:-gpt-5.6-sol}
+  HZCU_UTILITY_MODEL: ${HZCU_UTILITY_MODEL:-gpt-5.6-terra}
+  HZCU_AUTH_MODE: ${HZCU_AUTH_MODE:-anonymous}
+  HZCU_PUBLIC_API_BASE_URL: ${HZCU_PILOT_ORIGIN:-http://localhost:8080}
+  HZCU_WEB_APP_URL: ${HZCU_PILOT_ORIGIN:-http://localhost:8080}
+  HZCU_CAS_BROWSER_BASE_URL: ${HZCU_CAS_BROWSER_BASE_URL:-http://ca.hzcu.edu.cn/cas}
+  HZCU_CAS_SERVER_BASE_URL: ${HZCU_CAS_SERVER_BASE_URL:-http://ca.hzcu.edu.cn/cas}
+  HZCU_CAS_VALIDATION_PATH: ${HZCU_CAS_VALIDATION_PATH:-/serviceValidate}
+  HZCU_CAS_SERVICE_REGISTERED: ${HZCU_CAS_SERVICE_REGISTERED:-false}
+  HZCU_CAS_HTTP_TRANSPORT_APPROVED: ${HZCU_CAS_HTTP_TRANSPORT_APPROVED:-false}
+  HZCU_AUTH_SESSION_SECRET: ${HZCU_AUTH_SESSION_SECRET:-}
+  HZCU_ADMIN_CAS_SUBJECTS: ${HZCU_ADMIN_CAS_SUBJECTS:-}
+  HZCU_PILOT_ANONYMOUS_CAMPUS_MIRROR: ${HZCU_PILOT_ANONYMOUS_CAMPUS_MIRROR:-true}
+  HZCU_CAMPUS_QUERY_ROUTE: ${HZCU_CAMPUS_QUERY_ROUTE:-disabled}
+  HZCU_CAMPUS_DIRECT_PROBE_URL: "${HZCU_CAMPUS_DIRECT_PROBE_URL:-http://hzcujwb.hzcu.edu.cn/index.php?c=main&a=tlist&id=3}"
+  HZCU_INGESTION_ALLOWED_VISIBILITIES: ${HZCU_INGESTION_ALLOWED_VISIBILITIES:-public}
+  HZCU_MAX_CONCURRENT_AGENT_TASKS: 4
+  HZCU_MAX_ACTIVE_TASKS_PER_SUBJECT: 1
+
+services:
+  migrate:
+    build:
+      context: ./apps/api
+    environment: *api-environment
+    command: ["alembic", "-c", "/app/alembic.ini", "upgrade", "head"]
+    volumes:
+      - ${HZCU_PILOT_DATA_DIR:-./data}:/app/data
+    restart: "no"
+
+  api:
+    build:
+      context: ./apps/api
+    environment: *api-environment
+    expose:
+      - "8000"
+    volumes:
+      - ${HZCU_PILOT_DATA_DIR:-./data}:/app/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  ingestion-worker:
+    build:
+      context: ./apps/api
+    command: ["hzcu-agent", "sync-worker", "--poll-seconds", "30"]
+    environment: *api-environment
+    volumes:
+      - ${HZCU_PILOT_DATA_DIR:-./data}:/app/data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        NEXT_PUBLIC_API_BASE_URL: /api/v1
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: /api/v1
+      HZCU_API_INTERNAL_URL: http://api:8000
+    expose:
+      - "3000"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.10-alpine
+    ports:
+      - "${HZCU_PILOT_PORT:-8080}:80"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - api
+      - web
+    restart: unless-stopped

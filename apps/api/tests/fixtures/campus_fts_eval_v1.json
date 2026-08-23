@@ -1,0 +1,430 @@
+{
+  "version": 1,
+  "frozen_at": "2026-07-27T00:00:00+08:00",
+  "description": "KISS FTS5 retrieval baseline frozen across eight campus domains before acceptance tuning.",
+  "cases": [
+    {
+      "id": "calendar-01",
+      "domain": "教学与校历",
+      "shape": "formal",
+      "prompt": "查询浙大城市学院2026-2027学年校历",
+      "retrieval_queries": ["2026-2027学年校历"],
+      "expected_urls": ["http://ccpo.hzcu.edu.cn/picture/0/fdd5d1ce5c7f472a96d091803889b1af.png"]
+    },
+    {
+      "id": "calendar-02",
+      "domain": "教学与校历",
+      "shape": "formal",
+      "prompt": "查询2025年暑期短学期开课通知",
+      "retrieval_queries": ["2025年暑期短学期开课通知"],
+      "expected_urls": ["http://iee.hzcu.edu.cn/art/2025/6/10/art_6978_314983.html"]
+    },
+    {
+      "id": "calendar-03",
+      "domain": "教学与校历",
+      "shape": "fuzzy",
+      "prompt": "这个学年暑假后什么时候开学",
+      "retrieval_queries": ["2026-2027学年校历"],
+      "expected_urls": ["http://ccpo.hzcu.edu.cn/picture/0/fdd5d1ce5c7f472a96d091803889b1af.png"]
+    },
+    {
+      "id": "calendar-04",
+      "domain": "教学与校历",
+      "shape": "fuzzy",
+      "prompt": "暑假那段短学期怎么安排",
+      "retrieval_queries": ["2025年暑期短学期开课通知"],
+      "expected_urls": ["http://iee.hzcu.edu.cn/art/2025/6/10/art_6978_314983.html"]
+    },
+    {
+      "id": "calendar-05",
+      "domain": "教学与校历",
+      "shape": "compound",
+      "prompt": "新生和老生什么时候报到，哪天开始上课",
+      "retrieval_queries": ["2026-2027学年校历"],
+      "expected_urls": [
+        "http://ccpo.hzcu.edu.cn/picture/0/fdd5d1ce5c7f472a96d091803889b1af.png",
+        "http://ccpo.hzcu.edu.cn/picture/0/e67ec572d1914fa594868f9d1881e502.png"
+      ]
+    },
+    {
+      "id": "calendar-06",
+      "domain": "教学与校历",
+      "shape": "compound",
+      "prompt": "查校历，也看看暑期短学期开课安排",
+      "retrieval_queries": ["2026-2027学年校历", "2025年暑期短学期开课通知"],
+      "expected_urls": [
+        "http://ccpo.hzcu.edu.cn/picture/0/fdd5d1ce5c7f472a96d091803889b1af.png",
+        "http://iee.hzcu.edu.cn/art/2025/6/10/art_6978_314983.html"
+      ]
+    },
+    {
+      "id": "scholarship-01",
+      "domain": "奖助学金",
+      "shape": "formal",
+      "prompt": "查询商学院本科学生奖学金评定条件及管理办法",
+      "retrieval_queries": ["商学院本科学生奖学金评定条件"],
+      "expected_urls": ["http://sxy.hzcu.edu.cn/module/download/downfile.jsp?classid=0&filename=362b369ad013435489885fb89773da0e.pdf"]
+    },
+    {
+      "id": "scholarship-02",
+      "domain": "奖助学金",
+      "shape": "formal",
+      "prompt": "查询工程学院点对点考研奖学金评选通知",
+      "retrieval_queries": ["点对点考研奖学金 评选对象"],
+      "expected_urls": ["http://gc.hzcu.edu.cn/art/2026/4/17/art_405_329135.html"]
+    },
+    {
+      "id": "scholarship-03",
+      "domain": "奖助学金",
+      "shape": "fuzzy",
+      "prompt": "工程学院最近有什么考研奖学金可以申请",
+      "retrieval_queries": ["点对点考研奖学金 评选对象"],
+      "expected_urls": ["http://gc.hzcu.edu.cn/art/2026/4/17/art_405_329135.html"]
+    },
+    {
+      "id": "scholarship-04",
+      "domain": "奖助学金",
+      "shape": "fuzzy",
+      "prompt": "商学院奖学金一般按什么条件评",
+      "retrieval_queries": ["商学院本科学生奖学金评定条件"],
+      "expected_urls": ["http://sxy.hzcu.edu.cn/module/download/downfile.jsp?classid=0&filename=362b369ad013435489885fb89773da0e.pdf"]
+    },
+    {
+      "id": "scholarship-05",
+      "domain": "奖助学金",
+      "shape": "compound",
+      "prompt": "外设奖助学金怎么申请，商学院校设奖学金按什么办法评",
+      "retrieval_queries": ["外设奖助学金申请", "商学院本科学生奖学金评定条件"],
+      "expected_urls": [
+        "http://adc.hzcu.edu.cn/art/2025/10/11/art_5825_319065.html",
+        "http://sxy.hzcu.edu.cn/module/download/downfile.jsp?classid=0&filename=362b369ad013435489885fb89773da0e.pdf"
+      ]
+    },
+    {
+      "id": "scholarship-06",
+      "domain": "奖助学金",
+      "shape": "compound",
+      "prompt": "考研奖学金和本科奖学金评定办法都帮我查一下",
+      "retrieval_queries": ["点对点考研奖学金 评选对象", "本科学生奖学金评定条件"],
+      "expected_urls": [
+        "http://gc.hzcu.edu.cn/art/2026/4/17/art_405_329135.html",
+        "http://sxy.hzcu.edu.cn/module/download/downfile.jsp?classid=0&filename=362b369ad013435489885fb89773da0e.pdf"
+      ]
+    },
+    {
+      "id": "course-01",
+      "domain": "选课",
+      "shape": "formal",
+      "prompt": "查询2026-2027学年第一学期选课安排",
+      "retrieval_queries": ["2026-2027学年第一学期 选课时间安排"],
+      "expected_urls": ["http://hzcujwb.hzcu.edu.cn/index.php?a=detail&c=main&id=7341"]
+    },
+    {
+      "id": "course-02",
+      "domain": "选课",
+      "shape": "formal",
+      "prompt": "查询选课容量已满课程申请安排",
+      "retrieval_queries": ["容量已满课程申请"],
+      "expected_urls": ["http://hzcujwb.hzcu.edu.cn/index.php?a=detail&c=main&id=7341"]
+    },
+    {
+      "id": "course-03",
+      "domain": "选课",
+      "shape": "fuzzy",
+      "prompt": "下学期什么时候开始选课",
+      "retrieval_queries": ["选课时间安排"],
+      "expected_urls": ["http://hzcujwb.hzcu.edu.cn/index.php?a=detail&c=main&id=7341"]
+    },
+    {
+      "id": "course-04",
+      "domain": "选课",
+      "shape": "fuzzy",
+      "prompt": "课满了还能申请进去吗",
+      "retrieval_queries": ["容量已满课程申请"],
+      "expected_urls": ["http://hzcujwb.hzcu.edu.cn/index.php?a=detail&c=main&id=7341"]
+    },
+    {
+      "id": "course-05",
+      "domain": "选课",
+      "shape": "compound",
+      "prompt": "选课哪几轮可以退，满课申请是哪天",
+      "retrieval_queries": ["选课时间安排", "容量已满课程申请"],
+      "expected_urls": ["http://hzcujwb.hzcu.edu.cn/index.php?a=detail&c=main&id=7341"]
+    },
+    {
+      "id": "course-06",
+      "domain": "选课",
+      "shape": "compound",
+      "prompt": "比较上下两个学期的选课阶段安排",
+      "retrieval_queries": ["2026-2027学年第一学期 选课时间安排", "2025-2026学年第二学期 选课时间安排"],
+      "expected_urls": [
+        "http://hzcujwb.hzcu.edu.cn/index.php?a=detail&c=main&id=7341",
+        "http://hzcujwb.hzcu.edu.cn/index.php?a=detail&c=main&id=7056"
+      ]
+    },
+    {
+      "id": "club-01",
+      "domain": "社团",
+      "shape": "formal",
+      "prompt": "查询2026-2027学年学生社团年审注册通知",
+      "retrieval_queries": ["2026-2027学年 学生社团年审"],
+      "expected_urls": ["http://tw.hzcu.edu.cn/redir.php?catalog_id=161&object_id=236870"]
+    },
+    {
+      "id": "club-02",
+      "domain": "社团",
+      "shape": "formal",
+      "prompt": "查询社团信息变更事项通知",
+      "retrieval_queries": ["社团信息变更事项"],
+      "expected_urls": ["http://tw.hzcu.edu.cn/redir.php?catalog_id=161&object_id=235999"]
+    },
+    {
+      "id": "club-03",
+      "domain": "社团",
+      "shape": "fuzzy",
+      "prompt": "社团今年怎么年审",
+      "retrieval_queries": ["学生社团年审"],
+      "expected_urls": ["http://tw.hzcu.edu.cn/redir.php?catalog_id=161&object_id=236870"]
+    },
+    {
+      "id": "club-04",
+      "domain": "社团",
+      "shape": "fuzzy",
+      "prompt": "社团负责人换了要怎么办",
+      "retrieval_queries": ["社团信息变更事项"],
+      "expected_urls": ["http://tw.hzcu.edu.cn/redir.php?catalog_id=161&object_id=235999"]
+    },
+    {
+      "id": "club-05",
+      "domain": "社团",
+      "shape": "compound",
+      "prompt": "老社团年审和新社团成立都需要什么",
+      "retrieval_queries": ["学生社团年审", "新社团成立事项"],
+      "expected_urls": ["http://tw.hzcu.edu.cn/redir.php?catalog_id=161&object_id=236870"]
+    },
+    {
+      "id": "club-06",
+      "domain": "社团",
+      "shape": "compound",
+      "prompt": "帮我查社团信息变更，也查学院社团负责人能否报名学生委员会",
+      "retrieval_queries": ["社团信息变更事项", "学生委员会委员候选人 社团负责人"],
+      "expected_urls": [
+        "http://tw.hzcu.edu.cn/redir.php?catalog_id=161&object_id=235999",
+        "http://gc.hzcu.edu.cn/art/2026/5/11/art_405_331103.html"
+      ]
+    },
+    {
+      "id": "mentor-01",
+      "domain": "导师",
+      "shape": "formal",
+      "prompt": "查询信电学院硕士研究生指导教师招生资格名单",
+      "retrieval_queries": ["硕士研究生指导教师招生资格名单"],
+      "expected_urls": ["http://iee.hzcu.edu.cn/art/2026/6/22/art_6978_333765.html"]
+    },
+    {
+      "id": "mentor-02",
+      "domain": "导师",
+      "shape": "formal",
+      "prompt": "查询商学院硕士研究生导师招生资格管理办法",
+      "retrieval_queries": ["商学院硕士研究生导师招生资格管理办法"],
+      "expected_urls": ["http://sxy.hzcu.edu.cn/module/download/downfile.jsp?classid=0&filename=c6f9d2bb125c45ce87aa425509e8df13.pdf"]
+    },
+    {
+      "id": "mentor-03",
+      "domain": "导师",
+      "shape": "fuzzy",
+      "prompt": "信电今年哪些老师能带硕士",
+      "retrieval_queries": ["硕士研究生指导教师招生资格名单"],
+      "expected_urls": ["http://iee.hzcu.edu.cn/art/2026/6/22/art_6978_333765.html"]
+    },
+    {
+      "id": "mentor-04",
+      "domain": "导师",
+      "shape": "fuzzy",
+      "prompt": "毕业实习导师大概什么时候双选",
+      "retrieval_queries": ["双向选择确定校内指导教师"],
+      "expected_urls": ["http://jsxy.hzcu.edu.cn/art/2026/5/26/art_163_331903.html"]
+    },
+    {
+      "id": "mentor-05",
+      "domain": "导师",
+      "shape": "compound",
+      "prompt": "查导师招生资格规则和信电学院资格名单",
+      "retrieval_queries": ["硕士研究生导师招生资格管理办法", "硕士研究生指导教师招生资格名单"],
+      "expected_urls": [
+        "http://sxy.hzcu.edu.cn/module/download/downfile.jsp?classid=0&filename=c6f9d2bb125c45ce87aa425509e8df13.pdf",
+        "http://iee.hzcu.edu.cn/art/2026/6/22/art_6978_333765.html"
+      ]
+    },
+    {
+      "id": "mentor-06",
+      "domain": "导师",
+      "shape": "compound",
+      "prompt": "工程学院硕导名额和计算学院实习导师双选怎么安排",
+      "retrieval_queries": ["硕士研究生指导教师招生名额分配", "双向选择确定校内指导教师"],
+      "expected_urls": [
+        "http://gc.hzcu.edu.cn/art/2026/6/17/art_404_333340.html",
+        "http://jsxy.hzcu.edu.cn/art/2026/5/26/art_163_331903.html"
+      ]
+    },
+    {
+      "id": "innovation-01",
+      "domain": "竞赛创新",
+      "shape": "formal",
+      "prompt": "查询大学生创新训练计划项目中期检查通知",
+      "retrieval_queries": ["2024年度大学生创新训练计划项目 中期检查"],
+      "expected_urls": ["https://sjjx.hzcu.edu.cn/cxxl/ShowNews.aspx?NewsNo=07A2DF19D13A357E"]
+    },
+    {
+      "id": "innovation-02",
+      "domain": "竞赛创新",
+      "shape": "formal",
+      "prompt": "查询校级大学生创新训练项目中期检查结果汇总表",
+      "retrieval_queries": ["校级大学生创新训练项目中期检查结果汇总表"],
+      "expected_urls": ["http://hzcujwb.hzcu.edu.cn/userfiles/files/69c05a4ba44c6.xlsx"]
+    },
+    {
+      "id": "innovation-03",
+      "domain": "竞赛创新",
+      "shape": "fuzzy",
+      "prompt": "国创大概什么时候会中期检查",
+      "retrieval_queries": ["国创 中期检查"],
+      "expected_urls": ["https://sjjx.hzcu.edu.cn/cxxl/ShowNews.aspx?NewsNo=100C54FC3ACDF1BB"]
+    },
+    {
+      "id": "innovation-04",
+      "domain": "竞赛创新",
+      "shape": "fuzzy",
+      "prompt": "校创需不需要中期检查",
+      "retrieval_queries": ["校创 中期检查"],
+      "expected_urls": ["https://sjjx.hzcu.edu.cn/cxxl/UpLoadFile/245687.xls"]
+    },
+    {
+      "id": "innovation-05",
+      "domain": "竞赛创新",
+      "shape": "compound",
+      "prompt": "国创大概什么时候会中期检查，校创需不需要中期检查",
+      "retrieval_queries": ["国创 中期检查", "校创 中期检查"],
+      "expected_urls": [
+        "https://sjjx.hzcu.edu.cn/cxxl/ShowNews.aspx?NewsNo=100C54FC3ACDF1BB",
+        "https://sjjx.hzcu.edu.cn/cxxl/UpLoadFile/245687.xls"
+      ]
+    },
+    {
+      "id": "innovation-06",
+      "domain": "竞赛创新",
+      "shape": "compound",
+      "prompt": "查中期检查通知和今年校级项目汇总结果",
+      "retrieval_queries": ["2024年度大学生创新训练计划项目 中期检查", "校级大学生创新训练项目中期检查结果汇总表"],
+      "expected_urls": [
+        "https://sjjx.hzcu.edu.cn/cxxl/ShowNews.aspx?NewsNo=07A2DF19D13A357E",
+        "http://hzcujwb.hzcu.edu.cn/userfiles/files/69c05a4ba44c6.xlsx"
+      ]
+    },
+    {
+      "id": "development-01",
+      "domain": "专业发展",
+      "shape": "formal",
+      "prompt": "查询2026-2027学年第一学期本科生转专业工作",
+      "retrieval_queries": ["2026-2027学年第一学期 转专业申请"],
+      "expected_urls": ["http://hzcujwb.hzcu.edu.cn/index.php?a=detail&c=main&id=7253"]
+    },
+    {
+      "id": "development-02",
+      "domain": "专业发展",
+      "shape": "formal",
+      "prompt": "查询本科专业培养方案指导意见",
+      "retrieval_queries": ["本科专业培养方案 指导意见"],
+      "expected_urls": ["http://hzcujwb.hzcu.edu.cn/userfiles/files/694a06ec9ae26.pdf"]
+    },
+    {
+      "id": "development-03",
+      "domain": "专业发展",
+      "shape": "fuzzy",
+      "prompt": "我想转专业，什么时候申请",
+      "retrieval_queries": ["转专业申请 截止时间"],
+      "expected_urls": ["http://hzcujwb.hzcu.edu.cn/index.php?a=detail&c=main&id=7253"]
+    },
+    {
+      "id": "development-04",
+      "domain": "专业发展",
+      "shape": "fuzzy",
+      "prompt": "求是雏鹰班能不能换专业",
+      "retrieval_queries": ["2026-2027学年第一学期 求是雏鹰班 转专业申请"],
+      "expected_urls": ["http://hzcujwb.hzcu.edu.cn/index.php?a=detail&c=main&id=7196"]
+    },
+    {
+      "id": "development-05",
+      "domain": "专业发展",
+      "shape": "compound",
+      "prompt": "转专业有哪些限制，操作指南在哪里",
+      "retrieval_queries": ["转专业申请 不允许转专业", "本科转专业申请操作指南"],
+      "expected_urls": [
+        "http://hzcujwb.hzcu.edu.cn/index.php?a=detail&c=main&id=7253",
+        "http://hzcujwb.hzcu.edu.cn/userfiles/files/69e6b12cd8018.pdf"
+      ]
+    },
+    {
+      "id": "development-06",
+      "domain": "专业发展",
+      "shape": "compound",
+      "prompt": "帮我一起看转专业安排和新培养方案指导意见",
+      "retrieval_queries": ["2026-2027学年第一学期 转专业申请", "本科专业培养方案 指导意见"],
+      "expected_urls": [
+        "http://hzcujwb.hzcu.edu.cn/index.php?a=detail&c=main&id=7253",
+        "http://hzcujwb.hzcu.edu.cn/userfiles/files/694a06ec9ae26.pdf"
+      ]
+    },
+    {
+      "id": "policy-01",
+      "domain": "学校政策",
+      "shape": "formal",
+      "prompt": "查询2023级浙大城市学院本科生学生手册",
+      "retrieval_queries": ["2023级浙大城市学院本科生学生手册"],
+      "expected_urls": ["https://www.hzcu.edu.cn/fj/67.pdf"]
+    },
+    {
+      "id": "policy-02",
+      "domain": "学校政策",
+      "shape": "formal",
+      "prompt": "查询国际学生本科生学籍管理规定",
+      "retrieval_queries": ["国际学生 本科生 学籍管理规定"],
+      "expected_urls": ["https://www.hzcu.edu.cn/fj/94.pdf"]
+    },
+    {
+      "id": "policy-03",
+      "domain": "学校政策",
+      "shape": "fuzzy",
+      "prompt": "本科生学籍方面学校有什么规定",
+      "retrieval_queries": ["2023级浙大城市学院本科生学生手册 本科学生学籍管理细则"],
+      "expected_urls": ["https://www.hzcu.edu.cn/fj/67.pdf"]
+    },
+    {
+      "id": "policy-04",
+      "domain": "学校政策",
+      "shape": "fuzzy",
+      "prompt": "学生违纪处分规定去哪里看",
+      "retrieval_queries": ["2023级浙大城市学院本科生学生手册 学生违纪处分"],
+      "expected_urls": ["https://www.hzcu.edu.cn/fj/67.pdf"]
+    },
+    {
+      "id": "policy-05",
+      "domain": "学校政策",
+      "shape": "compound",
+      "prompt": "学生手册里的学籍和违纪处分规定都帮我找一下",
+      "retrieval_queries": ["2023级浙大城市学院本科生学生手册 本科学生学籍管理细则", "2023级浙大城市学院本科生学生手册 学生违纪处分"],
+      "expected_urls": ["https://www.hzcu.edu.cn/fj/67.pdf"]
+    },
+    {
+      "id": "policy-06",
+      "domain": "学校政策",
+      "shape": "compound",
+      "prompt": "比较普通本科生手册和国际本科生学籍管理规定",
+      "retrieval_queries": ["2023级浙大城市学院本科生学生手册", "国际学生 本科生 学籍管理规定"],
+      "expected_urls": [
+        "https://www.hzcu.edu.cn/fj/67.pdf",
+        "https://www.hzcu.edu.cn/fj/94.pdf"
+      ]
+    }
+  ]
+}

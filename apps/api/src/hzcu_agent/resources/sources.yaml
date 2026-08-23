@@ -1,0 +1,1614 @@
+# HZCU Campus Agent — Source Registry（白名单，不是爬虫入口）
+#
+# 网络与 502 提示
+# ----------------
+# 不少学院/部门站（教务 hzcujwb、团委 tw、学工 xgb 等）在公网或经 Clash 代理时
+# 会 502 / SSL 异常。运维与验收时请：
+#   1. 用学校统一身份（SSO）登录 https://vpn.hzcu.edu.cn （aTrust 客户端亦可）；
+#   2. 走 VPN 可达路径后再跑 sync（Windows aTrust 直连优先；勿让 Clash 7890 劫持）；
+#   3. 部分站也提供 host 前缀内网入口，形如：
+#        http://{host-with-dashes}.vpn.hzcu.edu.cn:8118/
+#      例：http://tw-hzcu-edu-cn.vpn.hzcu.edu.cn:8118/
+#          http://hzcujwb-hzcu-edu-cn.vpn.hzcu.edu.cn:8118/
+#   4. 当前 connector 登记的是直连 host（http/https 精确白名单）。VPN 前缀域名
+#      若要作为 fetch 目标，需另增 allowed_hosts / seed，或先在 VPN 下解析到
+#      与登记 host 一致的可达路由后再同步。
+#
+# 安全
+# ----
+# - 本文件是公开/校园信息源白名单，禁止写入账号、密码、Cookie、Token。
+# - VPN/SSO 凭证只放在本机环境或密钥管理中，仅用于人工登录与网络打通，
+#   不得进入 Source Registry、快照或仓库。
+# - 发现阶段可用操作员凭证探路；入库同步仍只抓 allowlist 上的公开/校园页。
+#
+# 明细与契约：research/source-discovery/registry/
+# 运行手册：docs/14-source-registry-operations.md
+
+version: 1
+sources:
+  - id: hzcu-main
+    name: 浙大城市学院主站
+    owner_department: 浙大城市学院
+    base_url: https://www.hzcu.edu.cn/
+    allowed_hosts:
+      - www.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 1800
+    rate_limit_per_minute: 20
+    default_ttl_seconds: 21600
+    live_required_for:
+      - 当前通知
+      - 截止时间
+      - 政策变更
+    parser_profile: hzcu_webplus
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - https://www.hzcu.edu.cn/index.htm
+      include_patterns:
+        - '/info/[0-9]+/[0-9]+\.htm$'
+      include_seed: false
+      max_resources_per_run: 30
+
+  - id: hzcu-information-disclosure
+    name: 浙大城市学院信息公开目录
+    owner_department: 浙大城市学院信息公开办公室
+    base_url: https://www.hzcu.edu.cn/index/xxgk/
+    allowed_hosts:
+      - www.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 21600
+    rate_limit_per_minute: 15
+    default_ttl_seconds: 86400
+    live_required_for:
+      - 学校政策
+      - 收费标准
+      - 学生手册
+    parser_profile: hzcu_disclosure
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - https://www.hzcu.edu.cn/index/xxgk/xxgkml.htm
+      include_patterns:
+        - '/fj/[^?#]+\.pdf'
+        - '/info/10[0-9]{2}/[0-9]+\.htm$'
+      include_seed: true
+      max_resources_per_run: 60
+
+  - id: hzcu-verified-official-materials
+    name: 校方正式材料核验档案
+    owner_department: 浙大城市学院
+    base_url: https://www.hzcu.edu.cn/
+    allowed_hosts:
+      - www.hzcu.edu.cn
+    visibility: campus
+    authority_level: official_secondary
+    acquisition_methods:
+      - operator_verified_official_artifact
+      - multimodal_page_ocr
+    poll_interval_seconds: 604800
+    rate_limit_per_minute: 1
+    default_ttl_seconds: 31536000
+    live_required_for:
+      - 当前有效口径
+      - 历史材料复核
+    parser_profile: operator_verified_document
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: operator_import
+      earliest_published_year: 1990
+      max_resources_per_run: 1
+
+  - id: hzcu-innovation-training
+    name: 大学生创新创业训练计划系统
+    owner_department: 浙大城市学院教务处
+    base_url: https://sjjx.hzcu.edu.cn/cxxl/
+    allowed_hosts:
+      - sjjx.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 1800
+    rate_limit_per_minute: 15
+    default_ttl_seconds: 10800
+    live_required_for:
+      - 竞赛报名
+      - 创新项目截止时间
+      - 国创
+      - 校创
+      - 创新训练
+      - 中期检查
+    parser_profile: aspnet_news
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - https://sjjx.hzcu.edu.cn/cxxl/index.aspx
+      include_patterns:
+        - '/cxxl/ShowNews\.aspx\?NewsNo='
+      include_seed: false
+      max_resources_per_run: 30
+
+  - id: hzcu-discipline-competitions
+    name: 大学生学科竞赛网
+    owner_department: 浙大城市学院教务处
+    base_url: https://sjjx.hzcu.edu.cn/xkjs/
+    allowed_hosts:
+      - sjjx.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 1800
+    rate_limit_per_minute: 15
+    default_ttl_seconds: 10800
+    live_required_for:
+      - 学科竞赛
+      - 竞赛通知
+      - 竞赛成果
+    parser_profile: aspnet_news
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - https://sjjx.hzcu.edu.cn/xkjs/index.aspx
+      include_patterns:
+        - '/xkjs/shownews\.aspx\?newsno=\d+$'
+      include_seed: false
+      max_resources_per_run: 30
+
+  - id: hzcu-admissions
+    name: 浙大城市学院本科招生网
+    owner_department: 浙大城市学院招生办公室
+    base_url: https://zs.hzcu.edu.cn/
+    allowed_hosts:
+      - zs.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 3600
+    rate_limit_per_minute: 20
+    default_ttl_seconds: 21600
+    live_required_for:
+      - 招生政策
+      - 录取安排
+    parser_profile: admissions_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - https://zs.hzcu.edu.cn/
+      include_patterns:
+        - '/guide/show-[0-9]+\.html$'
+        - '/news/show-[0-9]+\.html$'
+      include_seed: false
+      max_resources_per_run: 30
+
+  - id: hzcu-campus-lectures
+    name: 城院讲坛公开讲座
+    owner_department: 浙大城市学院
+    base_url: https://cjgl.hzcu.edu.cn/lectureExternal
+    allowed_hosts:
+      - cjgl.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - public_api
+      - scheduled_sync
+    poll_interval_seconds: 900
+    rate_limit_per_minute: 20
+    default_ttl_seconds: 3600
+    live_required_for:
+      - 讲座时间
+      - 讲座地点
+      - 报名截止时间
+    parser_profile: lecture_json
+    snapshot_policy: sanitized
+    enabled: true
+    connector:
+      kind: lecture_api
+      list_endpoint: https://cjgl.hzcu.edu.cn/dapi/v2/activity/lecture_service/find_lectures
+      detail_endpoint: https://cjgl.hzcu.edu.cn/dapi/v2/activity/lecture_service/find_lecture
+      public_detail_template: https://cjgl.hzcu.edu.cn/lectureExternal/detail?id={id}
+      page_size: 30
+      max_resources_per_run: 30
+
+  - id: hzcu-learning-cms
+    name: 学在城院公开通知
+    owner_department: 浙大城市学院信息与教育技术中心
+    base_url: https://course.hzcu.edu.cn/hzcu
+    allowed_hosts:
+      - course.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - public_api
+      - scheduled_sync
+    poll_interval_seconds: 900
+    rate_limit_per_minute: 20
+    default_ttl_seconds: 3600
+    live_required_for:
+      - 教学平台通知
+      - 平台维护时间
+      - 智云课堂状态
+    parser_profile: cms_message_json
+    snapshot_policy: sanitized
+    enabled: true
+    connector:
+      kind: cms_api
+      list_endpoint: https://course.hzcu.edu.cn/dapi/v2/cms/message_service/get_message_page_by_channel
+      public_detail_template: https://course.hzcu.edu.cn/hzcu/channeldetail?code={channel_code}&id={id}
+      channels:
+        - code: tongzhi
+          channel_id: 65bce8d89d337a05363759e3
+      page_size: 20
+      max_resources_per_run: 20
+
+  - id: hzcu-undergraduate-education
+    name: 本科教学公开信息
+    owner_department: 浙大城市学院教务处
+    base_url: https://www.hzcu.edu.cn/rcpy/bksjy.htm
+    allowed_hosts:
+      - www.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 21600
+    rate_limit_per_minute: 15
+    default_ttl_seconds: 86400
+    live_required_for:
+      - 本科专业
+      - 教学建设
+      - 实践教学
+      - 特色培养
+    parser_profile: undergraduate_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - https://www.hzcu.edu.cn/rcpy/bksjy.htm
+        - https://www.hzcu.edu.cn/rcpy/bksjy/bkzy.htm
+        - https://www.hzcu.edu.cn/rcpy/bksjy/jxjs.htm
+        - https://www.hzcu.edu.cn/rcpy/bksjy/sjjx.htm
+        - https://www.hzcu.edu.cn/rcpy/bksjy/tspy.htm
+      include_patterns:
+        - '/rcpy/bksjy/(?:bkzy|jxjs|sjjx|tspy)\.htm$'
+      include_seed: true
+      max_resources_per_run: 5
+
+  - id: hzcu-academic-units
+    name: 学院与教学科研机构目录
+    owner_department: 浙大城市学院
+    base_url: https://www.hzcu.edu.cn/yxjg/jxkyjg.htm
+    allowed_hosts:
+      - www.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+    poll_interval_seconds: 86400
+    rate_limit_per_minute: 10
+    default_ttl_seconds: 604800
+    live_required_for:
+      - 学院目录
+      - 专业归属
+    parser_profile: academic_units_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - https://www.hzcu.edu.cn/yxjg/jxkyjg.htm
+      include_patterns: []
+      include_seed: true
+      max_resources_per_run: 1
+
+  # --- P0 campus notice sources (discovered 2026-07-26) ---
+  # Many college/dept CMS only serve HTTP on exact hosts; scheme is part of the allowlist.
+
+  - id: hzcu-jwb-notices
+    name: 教务处通知
+    owner_department: 教务处
+    base_url: http://hzcujwb.hzcu.edu.cn/
+    allowed_hosts:
+      - hzcujwb.hzcu.edu.cn
+    visibility: campus
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 1800
+    rate_limit_per_minute: 15
+    default_ttl_seconds: 10800
+    live_required_for:
+      - 教务通知
+      - 选课
+      - 考试
+      - 竞赛报名
+      - 国创
+      - 校创
+      - 创新训练
+      - 中期检查
+    parser_profile: hzcu_jwb_html
+    snapshot_policy: raw
+    vpn_browser_base_url: http://hzcujwb-hzcu-edu-cn.vpn.hzcu.edu.cn:8118/
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://hzcujwb.hzcu.edu.cn/index.php?c=main&a=tlist&id=3
+        - http://hzcujwb.hzcu.edu.cn/index.php?c=main&a=tlist&id=4
+        - http://hzcujwb.hzcu.edu.cn/index.php?c=main&a=tlist&id=6
+        - http://hzcujwb.hzcu.edu.cn/index.php?c=main&a=tlist&id=18
+        - http://hzcujwb.hzcu.edu.cn/index.php?c=main&a=tlist&id=21
+        - http://hzcujwb.hzcu.edu.cn/index.php?c=main&a=tlist&id=22
+        - http://hzcujwb.hzcu.edu.cn/index.php?c=main&a=tlist&id=38
+        - http://hzcujwb.hzcu.edu.cn/index.php?c=main&a=tlist&id=40
+        - http://hzcujwb.hzcu.edu.cn/index.php?c=main&a=tlist&id=57
+        - http://hzcujwb.hzcu.edu.cn/index.php?c=main&a=tlist&id=70
+      include_patterns:
+        # canonicalize sorts query keys: a, c, id
+        - 'index\.php\?a=detail&c=main&id=\d+$'
+      include_seed: false
+      max_resources_per_run: 40
+
+  - id: hzcu-gc-teacher-notices
+    name: 工程学院教师通知
+    owner_department: 工程学院
+    base_url: http://gc.hzcu.edu.cn/
+    allowed_hosts:
+      - gc.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 1800
+    rate_limit_per_minute: 12
+    default_ttl_seconds: 10800
+    live_required_for:
+      - 工程学院教师通知
+      - 学院公示
+    parser_profile: hzcu_dahan_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://gc.hzcu.edu.cn/module/permissionread/permissionunit.jsp?columnid=404&unitid=16010&permissiontype=1&unitfilepath=
+      include_patterns:
+        - '/art/\d+/\d+/\d+/art_404_\d+\.html$'
+        - '/module/permissionread/article\.jsp\?(?=[^#]*i_columnid=404)(?=[^#]*i_artid=\d+)'
+      include_seed: false
+      max_resources_per_run: 30
+
+  - id: hzcu-gc-student-notices
+    name: 工程学院学生通知
+    owner_department: 工程学院
+    base_url: http://gc.hzcu.edu.cn/
+    allowed_hosts:
+      - gc.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 1800
+    rate_limit_per_minute: 12
+    default_ttl_seconds: 10800
+    live_required_for:
+      - 工程学院学生通知
+      - 评奖评优
+      - 就业
+    parser_profile: hzcu_dahan_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://gc.hzcu.edu.cn/module/permissionread/permissionunit.jsp?columnid=405&unitid=16010&permissiontype=1&unitfilepath=
+      include_patterns:
+        - '/art/\d+/\d+/\d+/art_405_\d+\.html$'
+        - '/module/permissionread/article\.jsp\?(?=[^#]*i_columnid=405)(?=[^#]*i_artid=\d+)'
+      include_seed: false
+      max_resources_per_run: 30
+
+  - id: hzcu-gc-site
+    name: 工程学院全站资料
+    owner_department: 工程学院
+    base_url: http://gc.hzcu.edu.cn/
+    allowed_hosts:
+      - gc.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - full_site_mirror
+      - live_search_backfill
+    poll_interval_seconds: 86400
+    rate_limit_per_minute: 120
+    default_ttl_seconds: 604800
+    live_required_for:
+      - 工程学院专业培养方案
+      - 工程学院本科课程计划
+      - 工程学院教育教学
+      - 工程学院师资与科研
+      - 工程学院研究生教育
+      - 工程学院办事指南
+    parser_profile: hzcu_dahan_html
+    snapshot_policy: raw
+    vpn_browser_base_url: http://gc-hzcu-edu-cn.vpn.hzcu.edu.cn:8118/
+    enabled: true
+    connector:
+      kind: linked_html
+      # Current pilot scope begins with the 2023 cohort/current information.
+      earliest_published_year: 2023
+      follow_site_navigation: true
+      mirror_listing_pages: false
+      full_scan_by_default: true
+      seed_urls:
+        # Primary navigation. Teacher/student notices remain in their dedicated
+        # sources above, avoiding duplicate resources in retrieval.
+        - http://gc.hzcu.edu.cn/col/col398/index.html
+        - http://gc.hzcu.edu.cn/col/col390/index.html
+        - http://gc.hzcu.edu.cn/col/col411/index.html
+        - http://gc.hzcu.edu.cn/col/col417/index.html
+        - http://gc.hzcu.edu.cn/col/col420/index.html
+        - http://gc.hzcu.edu.cn/col/col424/index.html
+        - http://gc.hzcu.edu.cn/col/col8542/index.html
+        - http://gc.hzcu.edu.cn/col/col1881/index.html
+        - http://gc.hzcu.edu.cn/col/col5983/index.html
+        - http://gc.hzcu.edu.cn/col/col6923/index.html
+        - http://gc.hzcu.edu.cn/col/col4582/index.html
+        # Department and institute entry points exposed from the homepage.
+        - http://gc.hzcu.edu.cn/col/col1164/index.html
+        - http://gc.hzcu.edu.cn/col/col1165/index.html
+        - http://gc.hzcu.edu.cn/col/col6353/index.html
+        - http://gc.hzcu.edu.cn/col/col6354/index.html
+        - http://gc.hzcu.edu.cn/col/col6351/index.html
+        - http://gc.hzcu.edu.cn/col/col7124/index.html
+        - http://gc.hzcu.edu.cn/col/col7125/index.html
+        - http://gc.hzcu.edu.cn/col/col7126/index.html
+        - http://gc.hzcu.edu.cn/col/col9582/index.html
+        - http://gc.hzcu.edu.cn/col/col9583/index.html
+      include_patterns:
+        - '/art/\d+/\d+/\d+/art_\d+_\d+\.html$'
+        - '/module/web/jpage/dataproxy\.jsp\?'
+      include_seed: true
+      max_resources_per_run: 500
+
+  - id: hzcu-tw-notices
+    name: 校团委通知公告
+    owner_department: 校团委
+    base_url: http://tw.hzcu.edu.cn/
+    allowed_hosts:
+      - tw.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 1800
+    rate_limit_per_minute: 12
+    default_ttl_seconds: 10800
+    live_required_for:
+      - 团委通知
+      - 社团
+      - 社会实践
+    parser_profile: hzcu_tw_redir_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://tw.hzcu.edu.cn/redir.php?catalog_id=161
+        - http://tw.hzcu.edu.cn/redir.php?catalog_id=149
+      include_patterns:
+        - 'redir\.php\?catalog_id=\d+&object_id=\d+$'
+      include_seed: false
+      max_resources_per_run: 30
+
+  - id: hzcu-jsxy-notices
+    name: 计算机学院通知、公示与专业竞赛
+    owner_department: 计算机与计算科学学院
+    base_url: http://jsxy.hzcu.edu.cn/
+    allowed_hosts:
+      - jsxy.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 3600
+    rate_limit_per_minute: 12
+    default_ttl_seconds: 21600
+    live_required_for:
+      - 计算学院通知
+      - 学院公示
+      - 专业竞赛
+      - 学生科研
+    parser_profile: hzcu_dahan_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://jsxy.hzcu.edu.cn/module/permissionread/permissionunit.jsp?columnid=163&unitid=19835&permissiontype=1&unitfilepath=
+        - http://jsxy.hzcu.edu.cn/module/permissionread/permissionunit.jsp?columnid=167&unitid=19835&permissiontype=1&unitfilepath=
+        - http://jsxy.hzcu.edu.cn/col/col2613/index.html
+      include_patterns:
+        - '/art/\d+/\d+/\d+/art_(?:163|167|2613)_\d+\.html$'
+      include_seed: false
+      max_resources_per_run: 30
+
+  - id: hzcu-iee-notices
+    name: 信电学院学工与公示
+    owner_department: 信息与电气工程学院
+    base_url: http://iee.hzcu.edu.cn/
+    allowed_hosts:
+      - iee.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 3600
+    rate_limit_per_minute: 12
+    default_ttl_seconds: 21600
+    live_required_for:
+      - 信电学院通知
+      - 学工在线
+    parser_profile: hzcu_dahan_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://iee.hzcu.edu.cn/col/col6641/index.html
+        - http://iee.hzcu.edu.cn/module/permissionread/permissionunit.jsp?columnid=6978&unitid=17487&permissiontype=1&unitfilepath=
+      include_patterns:
+        - '/art/\d+/\d+/\d+/art_(?:6641|6978)_\d+\.html$'
+      include_seed: false
+      max_resources_per_run: 30
+
+  - id: hzcu-sxy-notices
+    name: 商学院通知公告
+    owner_department: 商学院
+    base_url: http://sxy.hzcu.edu.cn/
+    allowed_hosts:
+      - sxy.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 3600
+    rate_limit_per_minute: 12
+    default_ttl_seconds: 21600
+    live_required_for:
+      - 商学院通知
+      - 研究生导师
+    parser_profile: hzcu_dahan_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://sxy.hzcu.edu.cn/module/permissionread/permissionunit.jsp?columnid=7763&unitid=18694&permissiontype=1&unitfilepath=
+      include_patterns:
+        - '/art/\d+/\d+/\d+/art_7763_\d+\.html$'
+      include_seed: false
+      max_resources_per_run: 30
+
+  - id: hzcu-media-notices
+    name: 新闻与传播学院通知公告
+    owner_department: 新闻与传播学院
+    base_url: http://media.hzcu.edu.cn/
+    allowed_hosts:
+      - media.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 3600
+    rate_limit_per_minute: 12
+    default_ttl_seconds: 21600
+    live_required_for:
+      - 新传学院通知
+    parser_profile: hzcu_dahan_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://media.hzcu.edu.cn/col/col5237/index.html
+      include_patterns:
+        - '/art/\d+/\d+/\d+/art_5237_\d+\.html$'
+      include_seed: false
+      max_resources_per_run: 30
+
+  - id: hzcu-tymy-notices
+    name: 体育美育教学部日常通知
+    owner_department: 体育美育教学部
+    base_url: https://tymy.hzcu.edu.cn/
+    allowed_hosts:
+      - tymy.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 3600
+    rate_limit_per_minute: 12
+    default_ttl_seconds: 21600
+    live_required_for:
+      - 体美通知
+      - 场馆开放
+    parser_profile: hzcu_dahan_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - https://tymy.hzcu.edu.cn/module/permissionread/permissionunit.jsp?columnid=7011&unitid=18244&permissiontype=1&unitfilepath=
+      include_patterns:
+        - '/art/\d+/\d+/\d+/art_7011_\d+\.html$'
+      include_seed: false
+      max_resources_per_run: 20
+
+  - id: hzcu-xgb-notices
+    name: 学生工作部通知栏目
+    owner_department: 学生工作部
+    base_url: http://xgb.hzcu.edu.cn/
+    allowed_hosts:
+      - xgb.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 3600
+    rate_limit_per_minute: 12
+    default_ttl_seconds: 21600
+    live_required_for:
+      - 学工通知
+      - 奖惩
+      - 思想教育
+    parser_profile: hzcu_tw_redir_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://xgb.hzcu.edu.cn/redir.php?catalog_id=309
+        - http://xgb.hzcu.edu.cn/redir.php?catalog_id=134
+        - http://xgb.hzcu.edu.cn/redir.php?catalog_id=85452
+      include_patterns:
+        - 'redir\.php\?catalog_id=\d+&object_id=\d+$'
+      include_seed: false
+      max_resources_per_run: 30
+
+  - id: hzcu-yjsc-notices
+    name: 研究生处通知与学科建设
+    owner_department: 研究生处
+    base_url: http://yjsc.hzcu.edu.cn/
+    allowed_hosts:
+      - yjsc.hzcu.edu.cn
+      - xkc.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 3600
+    rate_limit_per_minute: 12
+    default_ttl_seconds: 21600
+    live_required_for:
+      - 研究生通知
+      - 导师
+      - 学科建设
+    parser_profile: hzcu_phpcms_html
+    snapshot_policy: raw
+    vpn_browser_base_url: http://yjsc-hzcu-edu-cn.vpn.hzcu.edu.cn:8118/
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://yjsc.hzcu.edu.cn/index.php?m=content&c=index&a=lists&catid=64
+        - http://yjsc.hzcu.edu.cn/index.php?m=content&c=index&a=lists&catid=70
+        - http://yjsc.hzcu.edu.cn/index.php?m=content&c=index&a=lists&catid=73
+        - http://yjsc.hzcu.edu.cn/index.php?m=content&c=index&a=lists&catid=74
+        - http://yjsc.hzcu.edu.cn/index.php?m=content&c=index&a=lists&catid=76
+      include_patterns:
+        # canonicalize sorts query keys
+        - 'index\.php\?a=show&c=index&catid=\d+&id=\d+&m=content$'
+      include_seed: false
+      max_resources_per_run: 30
+
+  - id: hzcu-dwzzb-notices
+    name: 组织部统战部通知公告
+    owner_department: 组织部、统战部
+    base_url: http://dwzzb.hzcu.edu.cn/
+    allowed_hosts:
+      - dwzzb.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 3600
+    rate_limit_per_minute: 12
+    default_ttl_seconds: 21600
+    live_required_for:
+      - 党建通知
+      - 组织工作
+    parser_profile: hzcu_tw_redir_html
+    snapshot_policy: raw
+    vpn_browser_base_url: http://dwzzb-hzcu-edu-cn.vpn.hzcu.edu.cn:8118/
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://dwzzb.hzcu.edu.cn/redir.php?catalog_id=19299
+        - http://dwzzb.hzcu.edu.cn/redir.php?catalog_id=19406
+        - http://dwzzb.hzcu.edu.cn/redir.php?catalog_id=19407
+      include_patterns:
+        - 'redir\.php\?catalog_id=\d+&object_id=\d+$'
+      include_seed: false
+      max_resources_per_run: 30
+
+  - id: hzcu-hrd-notices
+    name: 人才人事处信息专栏
+    owner_department: 人才人事处
+    base_url: http://hrd.hzcu.edu.cn/
+    allowed_hosts:
+      - hrd.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 7200
+    rate_limit_per_minute: 10
+    default_ttl_seconds: 43200
+    live_required_for:
+      - 人事通知
+      - 职称
+      - 人才引进
+    parser_profile: hzcu_tw_redir_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://hrd.hzcu.edu.cn/redir.php?catalog_id=105
+        - http://hrd.hzcu.edu.cn/redir.php?catalog_id=106
+        - http://hrd.hzcu.edu.cn/redir.php?catalog_id=107
+        - http://hrd.hzcu.edu.cn/redir.php?catalog_id=24515
+      include_patterns:
+        - 'redir\.php\?catalog_id=\d+&object_id=\d+$'
+      include_seed: false
+      max_resources_per_run: 25
+
+  # --- P1 campus notice sources (colleges + functional depts, 2026-07-26) ---
+
+  - id: hzcu-yxy-notices
+    name: 医学院通知公告
+    owner_department: 医学院
+    base_url: http://yxy.hzcu.edu.cn/
+    allowed_hosts:
+      - yxy.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 3600
+    rate_limit_per_minute: 12
+    default_ttl_seconds: 21600
+    live_required_for:
+      - 医学院通知
+      - 教材选用
+      - 特色班
+    parser_profile: hzcu_newgen_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://yxy.hzcu.edu.cn/398/list.htm
+        - http://yxy.hzcu.edu.cn/315/list.htm
+        - http://yxy.hzcu.edu.cn/320/list.htm
+        - http://yxy.hzcu.edu.cn/400/list.htm
+      include_patterns:
+        - '/\d{4}/\d{4}/c\d+a\d+/page\.htm$'
+      include_seed: false
+      max_resources_per_run: 30
+
+  - id: hzcu-sfl-notices
+    name: 外国语学院通知公告
+    owner_department: 外国语学院
+    base_url: http://sfl.hzcu.edu.cn/
+    allowed_hosts:
+      - sfl.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 3600
+    rate_limit_per_minute: 12
+    default_ttl_seconds: 21600
+    live_required_for:
+      - 外院通知
+      - 就业奖
+      - 教材
+    parser_profile: hzcu_newgen_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://sfl.hzcu.edu.cn/202/list.htm
+        - http://sfl.hzcu.edu.cn/156/list.htm
+        - http://sfl.hzcu.edu.cn/201/list.htm
+      include_patterns:
+        - '/\d{4}/\d{4}/c\d+a\d+/page\.htm$'
+      include_seed: false
+      max_resources_per_run: 30
+
+  - id: hzcu-rw-notices
+    name: 人文学院通知与文件
+    owner_department: 人文学院
+    base_url: http://rw.hzcu.edu.cn/
+    allowed_hosts:
+      - rw.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 3600
+    rate_limit_per_minute: 12
+    default_ttl_seconds: 21600
+    live_required_for:
+      - 人文学院通知
+      - 学院文件
+      - 活动预告
+    parser_profile: hzcu_dahan_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://rw.hzcu.edu.cn/col/col8998/index.html
+        - http://rw.hzcu.edu.cn/col/col9008/index.html
+        - http://rw.hzcu.edu.cn/col/col9109/index.html
+        - http://rw.hzcu.edu.cn/col/col9002/index.html
+      include_patterns:
+        - '/art/\d+/\d+/\d+/art_(?:8998|9008|9109|9002)_\d+\.html$'
+      include_seed: false
+      max_resources_per_run: 30
+
+  - id: hzcu-adc-notices
+    name: 艺术与考古学院通知公示
+    owner_department: 艺术与考古学院
+    base_url: http://adc.hzcu.edu.cn/
+    allowed_hosts:
+      - adc.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 3600
+    rate_limit_per_minute: 12
+    default_ttl_seconds: 21600
+    live_required_for:
+      - 艺考学院通知
+      - 学长
+      - 教材
+    parser_profile: hzcu_dahan_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://adc.hzcu.edu.cn/module/permissionread/permissionunit.jsp?columnid=5782&unitid=14724&permissiontype=1&unitfilepath=
+        - http://adc.hzcu.edu.cn/col/col5784/index.html
+        - http://adc.hzcu.edu.cn/col/col5825/index.html
+        - http://adc.hzcu.edu.cn/col/col5777/index.html
+      include_patterns:
+        - '/art/\d+/\d+/\d+/art_(?:5782|5784|5825|5777)_\d+\.html$'
+      include_seed: false
+      max_resources_per_run: 30
+
+  - id: hzcu-isct-notices
+    name: 国际文化旅游学院通知公示
+    owner_department: 国际文化旅游学院
+    base_url: http://isct.hzcu.edu.cn/
+    allowed_hosts:
+      - isct.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 3600
+    rate_limit_per_minute: 12
+    default_ttl_seconds: 21600
+    live_required_for:
+      - 国旅学院通知
+      - 学长
+      - 岗位公示
+    parser_profile: hzcu_dahan_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://isct.hzcu.edu.cn/module/permissionread/permissionunit.jsp?columnid=7318&unitid=18584&permissiontype=1&unitfilepath=
+        - http://isct.hzcu.edu.cn/module/permissionread/permissionunit.jsp?columnid=7319&unitid=18584&permissiontype=1&unitfilepath=
+        - http://isct.hzcu.edu.cn/module/permissionread/permissionunit.jsp?columnid=7317&unitid=18584&permissiontype=1&unitfilepath=
+      include_patterns:
+        - '/art/\d+/\d+/\d+/art_(?:7317|7318|7319)_\d+\.html$'
+      include_seed: false
+      max_resources_per_run: 30
+
+  - id: hzcu-gtkj-notices
+    name: 国土空间规划学院教师通知
+    owner_department: 国土空间规划学院
+    base_url: http://gtkj.hzcu.edu.cn/
+    allowed_hosts:
+      - gtkj.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 3600
+    rate_limit_per_minute: 12
+    default_ttl_seconds: 21600
+    live_required_for:
+      - 国土学院通知
+      - 考核公示
+    parser_profile: hzcu_dahan_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://gtkj.hzcu.edu.cn/col/col6716/index.html
+        - http://gtkj.hzcu.edu.cn/module/permissionread/permissionunit.jsp?columnid=6740&unitid=16010&permissiontype=1&unitfilepath=
+      include_patterns:
+        - '/art/\d+/\d+/\d+/art_(?:6716|6740)_\d+\.html$'
+      include_seed: false
+      max_resources_per_run: 25
+
+  - id: hzcu-marx-notices
+    name: 马克思主义学院通知动态
+    owner_department: 马克思主义学院
+    base_url: http://marx.hzcu.edu.cn/
+    allowed_hosts:
+      - marx.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 7200
+    rate_limit_per_minute: 10
+    default_ttl_seconds: 43200
+    live_required_for:
+      - 马院通知
+    parser_profile: hzcu_phpcms_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://marx.hzcu.edu.cn/index.php?m=content&c=index&a=lists&catid=58
+        - http://marx.hzcu.edu.cn/index.php?m=content&c=index&a=lists&catid=43
+        - http://marx.hzcu.edu.cn/index.php?m=content&c=index&a=lists&catid=67
+      include_patterns:
+        - 'index\.php\?a=show&c=index&catid=\d+&id=\d+&m=content$'
+      include_seed: false
+      max_resources_per_run: 25
+
+  - id: hzcu-nzuwi-news
+    name: 新西兰UW学院最新报道
+    owner_department: 新西兰UW学院
+    base_url: http://nzuwi.hzcu.edu.cn/
+    allowed_hosts:
+      - nzuwi.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 7200
+    rate_limit_per_minute: 10
+    default_ttl_seconds: 43200
+    live_required_for:
+      - UW学院动态
+    parser_profile: hzcu_dahan_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://nzuwi.hzcu.edu.cn/col/col4222/index.html
+        - http://nzuwi.hzcu.edu.cn/col/col4232/index.html
+      include_patterns:
+        - '/art/\d+/\d+/\d+/art_(?:4222|4232)_\d+\.html$'
+      include_seed: false
+      max_resources_per_run: 20
+
+  - id: hzcu-ccpo-notices
+    name: 综合服务会议与通知
+    owner_department: 综合服务
+    base_url: http://ccpo.hzcu.edu.cn/
+    allowed_hosts:
+      - ccpo.hzcu.edu.cn
+    visibility: campus
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 3600
+    rate_limit_per_minute: 12
+    default_ttl_seconds: 21600
+    live_required_for:
+      - 会议通知
+      - 一周会议
+      - 学校文件
+    parser_profile: hzcu_dahan_html
+    snapshot_policy: raw
+    vpn_browser_base_url: http://ccpo-hzcu-edu-cn.vpn.hzcu.edu.cn:8118/
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://ccpo.hzcu.edu.cn/col/col3542/index.html
+        - http://ccpo.hzcu.edu.cn/col/col3581/index.html
+        - http://ccpo.hzcu.edu.cn/col/col75/index.html
+        - http://ccpo.hzcu.edu.cn/col/col87/index.html
+      include_patterns:
+        - '/art/\d+/\d+/\d+/art_(?:3542|3581|75|87)_\d+\.html$'
+      include_seed: false
+      max_resources_per_run: 35
+
+  - id: hzcu-ccpo-calendar
+    name: 城院校历
+    owner_department: 综合服务
+    base_url: http://ccpo.hzcu.edu.cn/
+    allowed_hosts:
+      - ccpo.hzcu.edu.cn
+    visibility: campus
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 21600
+    rate_limit_per_minute: 12
+    default_ttl_seconds: 21600
+    live_required_for:
+      - 校历
+      - 开学
+      - 放假
+      - 寒假
+      - 暑假
+      - 考试周
+    parser_profile: hzcu_dahan_html
+    snapshot_policy: raw
+    vpn_browser_base_url: http://ccpo-hzcu-edu-cn.vpn.hzcu.edu.cn:8118/
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://ccpo.hzcu.edu.cn/col/col10382/index.html
+      include_patterns:
+        - '/col/col10382/index\.html$'
+        - '/art/\d+/\d+/\d+/art_10382_\d+\.html$'
+      include_seed: true
+      max_resources_per_run: 15
+
+  - id: hzcu-xcb-notices
+    name: 党委宣传部校园文化与讲堂
+    owner_department: 党委宣传部
+    base_url: https://xcb.hzcu.edu.cn/
+    allowed_hosts:
+      - xcb.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 7200
+    rate_limit_per_minute: 10
+    default_ttl_seconds: 43200
+    live_required_for:
+      - 城院大讲堂
+      - 校园文化
+    parser_profile: hzcu_dahan_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - https://xcb.hzcu.edu.cn/col/col5511/index.html
+        - https://xcb.hzcu.edu.cn/col/col5508/index.html
+        - https://xcb.hzcu.edu.cn/col/col5507/index.html
+      include_patterns:
+        - '/art/\d+/\d+/\d+/art_(?:5511|5508|5507)_\d+\.html$'
+      include_seed: false
+      max_resources_per_run: 25
+
+  - id: hzcu-dzb-notices
+    name: 党政办公室通知公告
+    owner_department: 党政办公室
+    base_url: http://dzb.hzcu.edu.cn/
+    allowed_hosts:
+      - dzb.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 3600
+    rate_limit_per_minute: 12
+    default_ttl_seconds: 21600
+    live_required_for:
+      - 党政办通知
+      - 公示
+    parser_profile: hzcu_newgen_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://dzb.hzcu.edu.cn/625/list.htm
+        - http://dzb.hzcu.edu.cn/621/list.htm
+        - http://dzb.hzcu.edu.cn/626/list.htm
+        - http://dzb.hzcu.edu.cn/609/list.htm
+      include_patterns:
+        - '/\d{4}/\d{4}/c\d+a\d+/page\.htm$'
+      include_seed: false
+      max_resources_per_run: 25
+
+  - id: hzcu-aqbwb-notices
+    name: 安全保卫部通知公告
+    owner_department: 安全保卫部
+    base_url: http://aqbwb.hzcu.edu.cn/
+    allowed_hosts:
+      - aqbwb.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 3600
+    rate_limit_per_minute: 12
+    default_ttl_seconds: 21600
+    live_required_for:
+      - 安保通知
+      - 门禁
+      - 封闭道路
+    parser_profile: hzcu_newgen_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://aqbwb.hzcu.edu.cn/25/list.htm
+        - http://aqbwb.hzcu.edu.cn/24/list.htm
+        - http://aqbwb.hzcu.edu.cn/14/list.htm
+      include_patterns:
+        - '/\d{4}/\d{4}/c\d+a\d+/page\.htm$'
+      include_seed: false
+      max_resources_per_run: 25
+
+  - id: hzcu-jcb-notices
+    name: 计划财务处通知公告
+    owner_department: 计划财务处
+    base_url: http://jcb.hzcu.edu.cn/
+    allowed_hosts:
+      - jcb.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 7200
+    rate_limit_per_minute: 10
+    default_ttl_seconds: 43200
+    live_required_for:
+      - 财务通知
+      - 缴费
+      - 报销
+    parser_profile: hzcu_newgen_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://jcb.hzcu.edu.cn/38/list.htm
+        - http://jcb.hzcu.edu.cn/108/list.htm
+        - http://jcb.hzcu.edu.cn/44/list.htm
+      include_patterns:
+        - '/\d{4}/\d{4}/c\d+a\d+/page\.htm$'
+      include_seed: false
+      max_resources_per_run: 25
+
+  - id: hzcu-kyc-notices
+    name: 科研处项目与成果
+    owner_department: 科研处
+    base_url: http://kyc.hzcu.edu.cn/
+    allowed_hosts:
+      - kyc.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 3600
+    rate_limit_per_minute: 12
+    default_ttl_seconds: 21600
+    live_required_for:
+      - 科研项目
+      - 成果奖
+      - 申报指南
+    parser_profile: hzcu_phpcms_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://kyc.hzcu.edu.cn/index.php?m=content&c=index&a=lists&catid=33
+        - http://kyc.hzcu.edu.cn/index.php?m=content&c=index&a=lists&catid=34
+        - http://kyc.hzcu.edu.cn/index.php?m=content&c=index&a=lists&catid=97
+      include_patterns:
+        - 'index\.php\?a=show&c=index&catid=\d+&id=\d+&m=content$'
+      include_seed: false
+      max_resources_per_run: 30
+
+  - id: hzcu-sjc-notices
+    name: 审计处审计与巡察公告
+    owner_department: 审计处
+    base_url: http://sjc.hzcu.edu.cn/
+    allowed_hosts:
+      - sjc.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 7200
+    rate_limit_per_minute: 10
+    default_ttl_seconds: 43200
+    live_required_for:
+      - 审计公告
+      - 巡察公告
+    parser_profile: hzcu_phpcms_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://sjc.hzcu.edu.cn/index.php?m=content&c=index&a=lists&catid=25
+        - http://sjc.hzcu.edu.cn/index.php?m=content&c=index&a=lists&catid=26
+        - http://sjc.hzcu.edu.cn/index.php?m=content&c=index&a=lists&catid=27
+      include_patterns:
+        - 'index\.php\?a=show&c=index&catid=\d+&id=\d+&m=content$'
+      include_seed: false
+      max_resources_per_run: 25
+
+  - id: hzcu-its-notices
+    name: 信息与教育技术中心通知公告
+    owner_department: 信息与教育技术中心
+    base_url: http://its.hzcu.edu.cn/
+    allowed_hosts:
+      - its.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 3600
+    rate_limit_per_minute: 12
+    default_ttl_seconds: 21600
+    live_required_for:
+      - 信息中心通知
+      - 平台维护
+      - 网络安全
+    parser_profile: hzcu_newgen_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://its.hzcu.edu.cn/657/list.htm
+        - http://its.hzcu.edu.cn/656/list.htm
+      include_patterns:
+        - '/\d{4}/\d{4}/c\d+a\d+/page\.htm$'
+      include_seed: false
+      max_resources_per_run: 25
+
+  - id: hzcu-hqjj-notices
+    name: 总务后勤服务通知
+    owner_department: 总务处
+    base_url: http://hqjj.hzcu.edu.cn/
+    allowed_hosts:
+      - hqjj.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 7200
+    rate_limit_per_minute: 10
+    default_ttl_seconds: 43200
+    live_required_for:
+      - 后勤通知
+      - 停水停电
+      - 交通
+    parser_profile: hzcu_newgen_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://hqjj.hzcu.edu.cn/50/list.htm
+        - http://hqjj.hzcu.edu.cn/64/list.htm
+        - http://hqjj.hzcu.edu.cn/67/list.htm
+        - http://hqjj.hzcu.edu.cn/54/list.htm
+      include_patterns:
+        - '/\d{4}/\d{4}/c\d+a\d+/page\.htm$'
+      include_seed: false
+      max_resources_per_run: 25
+
+  - id: hzcu-gonghui-notices
+    name: 工会通知公告
+    owner_department: 工会
+    base_url: http://gonghui.hzcu.edu.cn/
+    allowed_hosts:
+      - gonghui.hzcu.edu.cn
+      # 部分 object 会 302 到综合服务站正文
+      - ccpo.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 7200
+    rate_limit_per_minute: 10
+    default_ttl_seconds: 43200
+    live_required_for:
+      - 工会通知
+      - 公示
+    parser_profile: hzcu_tw_redir_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://gonghui.hzcu.edu.cn/chinese/redir.php?catalog_id=45276
+        - http://gonghui.hzcu.edu.cn/chinese/redir.php?catalog_id=48240
+        - http://gonghui.hzcu.edu.cn/chinese/redir.php?catalog_id=36947
+      include_patterns:
+        - 'redir\.php\?catalog_id=\d+&object_id=\d+$'
+        - '/art/\d+/\d+/\d+/art_\d+_\d+\.html$'
+      include_seed: false
+      max_resources_per_run: 25
+
+  - id: hzcu-cfd-notices
+    name: 教师促进与发展中心通知
+    owner_department: 教师促进与发展中心
+    base_url: http://cfd.hzcu.edu.cn/
+    allowed_hosts:
+      - cfd.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 7200
+    rate_limit_per_minute: 10
+    default_ttl_seconds: 43200
+    live_required_for:
+      - 教师发展
+      - 教研室
+      - 教学竞赛
+    parser_profile: hzcu_dahan_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://cfd.hzcu.edu.cn/col/col3215/index.html
+        - http://cfd.hzcu.edu.cn/col/col3214/index.html
+      include_patterns:
+        - '/art/\d+/\d+/\d+/art_(?:3214|3215)_\d+\.html$'
+      include_seed: false
+      max_resources_per_run: 25
+
+  - id: hzcu-jygs-notices
+    name: 教育发展中心重点提示与通知
+    owner_department: 教育发展中心
+    base_url: http://jygs.hzcu.edu.cn/
+    allowed_hosts:
+      - jygs.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 7200
+    rate_limit_per_minute: 10
+    default_ttl_seconds: 43200
+    live_required_for:
+      - 教育发展公司通知
+      - 重点提示
+      - 招租
+    parser_profile: hzcu_dahan_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://jygs.hzcu.edu.cn/col/col3561/index.html
+        - http://jygs.hzcu.edu.cn/module/permissionread/permissionunit.jsp?columnid=3418&unitid=7619&permissiontype=1&unitfilepath=
+        - http://jygs.hzcu.edu.cn/col/col3433/index.html
+        - http://jygs.hzcu.edu.cn/col/col3434/index.html
+      include_patterns:
+        - '/art/\d+/\d+/\d+/art_(?:3561|3418|3433|3434)_\d+\.html$'
+      include_seed: false
+      max_resources_per_run: 30
+
+  - id: hzcu-lxzx-notices
+    name: 留学中心通知公告
+    owner_department: 留学中心
+    base_url: https://lxzx.hzcu.edu.cn/
+    allowed_hosts:
+      - lxzx.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 7200
+    rate_limit_per_minute: 10
+    default_ttl_seconds: 43200
+    live_required_for:
+      - 留学中心通知
+      - 公共课安排
+    parser_profile: hzcu_newgen_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - https://lxzx.hzcu.edu.cn/505/list.htm
+        - https://lxzx.hzcu.edu.cn/521/list.htm
+        - https://lxzx.hzcu.edu.cn/522/list.htm
+      include_patterns:
+        - '/\d{4}/\d{4}/c\d+a\d+/page\.htm$'
+      include_seed: false
+      max_resources_per_run: 20
+
+  - id: hzcu-jjc-notices
+    name: 基本建设处动态与值班
+    owner_department: 基本建设处
+    base_url: http://jjc.hzcu.edu.cn/
+    allowed_hosts:
+      - jjc.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 86400
+    rate_limit_per_minute: 8
+    default_ttl_seconds: 86400
+    live_required_for:
+      - 基建动态
+      - 暑期值班
+    parser_profile: hzcu_dahan_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://jjc.hzcu.edu.cn/col/col7869/index.html
+        - http://jjc.hzcu.edu.cn/col/col7868/index.html
+      include_patterns:
+        - '/art/\d+/\d+/\d+/art_(?:7868|7869)_\d+\.html$'
+      include_seed: false
+      max_resources_per_run: 20
+
+  - id: hzcu-ipo-guides
+    name: 国际交流与合作处办事下载
+    owner_department: 国际交流与合作处
+    base_url: http://ipo.hzcu.edu.cn/
+    allowed_hosts:
+      - ipo.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 86400
+    rate_limit_per_minute: 8
+    default_ttl_seconds: 86400
+    live_required_for:
+      - 因公出国
+      - 国际交流办事
+    parser_profile: hzcu_dahan_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      seed_urls:
+        - http://ipo.hzcu.edu.cn/module/permissionread/permissionunit.jsp?columnid=2702&unitid=6592&permissiontype=1&unitfilepath=
+        - http://ipo.hzcu.edu.cn/module/permissionread/permissionunit.jsp?columnid=2703&unitid=6592&permissiontype=1&unitfilepath=
+      include_patterns:
+        - '/art/\d+/\d+/\d+/art_(?:2702|2703)_\d+\.html$'
+      include_seed: false
+      max_resources_per_run: 20
+
+  - id: hzcu-career-notices
+    name: 就业网通知公告
+    owner_department: 招生就业处
+    base_url: https://career.hzcu.edu.cn/
+    allowed_hosts:
+      - career.hzcu.edu.cn
+    visibility: public
+    authority_level: official
+    acquisition_methods:
+      - scheduled_crawl
+      - live_search_backfill
+    poll_interval_seconds: 1800
+    rate_limit_per_minute: 15
+    default_ttl_seconds: 10800
+    live_required_for:
+      - 就业通知
+      - 招聘
+      - 生涯教育
+    parser_profile: hzcu_career_html
+    snapshot_policy: raw
+    enabled: true
+    connector:
+      kind: linked_html
+      # tag 列表页多为前端渲染；首页 SSR 含 /news/view/aid/ 链接
+      seed_urls:
+        - https://career.hzcu.edu.cn/
+        - https://career.hzcu.edu.cn/news/index/tag/tzgg
+      include_patterns:
+        - '/news/view/aid/\d+(?:/tag/[^/?#]+)?$'
+      include_seed: false
+      max_resources_per_run: 30

@@ -1,0 +1,75 @@
+# Secrets
+API.txt
+API.*.txt
+.env
+.env.*
+!.env.example
+*.secret
+*.secrets
+secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+.venv-windows/
+*.egg-info/
+dist/
+build/
+
+# Local data
+data/
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+*.bak
+backups/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
+# Browser validation artifacts
+.playwright-cli/
+output/playwright/
+playwright-report/
+test-results/
+
+# Local run artifacts
+output/
+tmp/
+mnt/
+config/windows.env
+*.log
+*.pid
+
+# Private deployment overlays
+compose.production.yml
+deploy/Caddyfile.production
+deploy/nginx-*.conf
+deploy/private/
+
+# Private campus adapters and discovery captures
+apps/vpn-sidecar/
+research/source-discovery/
+
+# IDE / OS
+.idea/
+.vscode/
+.claude/settings.local.json
+.codex/
+.DS_Store
+Thumbs.db

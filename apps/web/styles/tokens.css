@@ -1,0 +1,79 @@
+:root {
+  color-scheme: light;
+
+  /* Core blue-white system */
+  --ink: #142b4b;
+  --ink-deep: #0d213c;
+  --ink-soft: #294665;
+  --paper: #edf2f7;
+  --paper-bright: #ffffff;
+  --white: #ffffff;
+  --signal-yellow: #356fae;
+  --signal-yellow-soft: #4f82ba;
+  --signal-cyan: #65b8c8;
+  --signal-magenta: #6f8fba;
+  --danger: #d83c54;
+  --success: #0a9b78;
+
+  /* Neutral scale is deliberately blue-biased. */
+  --gray-50: #f8fafc;
+  --gray-100: #eef2f6;
+  --gray-200: #dce3eb;
+  --gray-300: #bec9d6;
+  --gray-400: #94a3b5;
+  --gray-500: #64758a;
+  --gray-600: #465a70;
+  --gray-700: #293f58;
+
+  --blue-50: #f3f7fb;
+  --blue-100: #e7eff7;
+  --blue-200: #d4e0ed;
+  --blue-300: #abc1d9;
+  --blue-400: #779cc4;
+  --blue-500: #4a7fb5;
+  --blue-600: #326ca8;
+  --blue-700: #285989;
+  --blue-900: #173f68;
+  --canvas: #e8eef5;
+  --surface: rgba(255, 255, 255, 0.96);
+  --surface-soft: rgba(247, 249, 252, 0.92);
+  --surface-blue: rgba(234, 240, 247, 0.9);
+
+  --line: rgba(39, 73, 110, 0.2);
+  --line-strong: rgba(27, 60, 96, 0.4);
+  --line-focus: rgba(50, 108, 168, 0.5);
+  --line-inverse: rgba(255, 255, 255, 0.16);
+
+  /*
+   * Keep Chinese and Latin UI copy on one glyph system. The previous display
+   * stack started with Bahnschrift, so mixed-language headings visibly changed
+   * typeface mid-line when the browser fell back for Chinese glyphs.
+   */
+  --font-ui: "Microsoft YaHei UI", "PingFang SC", "Noto Sans SC",
+    "Noto Sans CJK SC", "Source Han Sans SC", "Segoe UI", sans-serif;
+  --font-display: var(--font-ui);
+  --font-body: var(--font-ui);
+  --font-mono: "Cascadia Mono", "SFMono-Regular", "Roboto Mono", Consolas,
+    monospace;
+
+  --rail-width: 72px;
+  --calibration-height: 22px;
+  --masthead-height: 72px;
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --shadow-xs: 0 1px 3px rgba(25, 47, 73, 0.08);
+  --shadow-sm: 0 10px 26px rgba(31, 58, 88, 0.09),
+    0 1px 3px rgba(25, 47, 73, 0.1);
+  --shadow-md: 0 20px 52px rgba(31, 58, 88, 0.12),
+    0 3px 8px rgba(25, 47, 73, 0.08);
+  --shadow-lg: 0 30px 84px rgba(25, 49, 78, 0.16),
+    0 4px 12px rgba(25, 47, 73, 0.1);
+  --hard-shadow: var(--shadow-sm);
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --transition-fast: 180ms var(--ease-standard);
+  --transition-panel: 480ms var(--ease-out);
+}
