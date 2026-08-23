@@ -352,10 +352,16 @@
 }
 
 .onboarding-panel {
+  display: flex;
   width: min(760px, 100%);
+  flex-direction: column;
 }
 
-.onboarding-panel > p {
+.onboarding-scroll-area {
+  min-height: 0;
+}
+
+.onboarding-scroll-area > p {
   margin: 0;
   padding: 16px 20px 0;
   color: var(--gray-600);
@@ -371,6 +377,7 @@
 
 .onboarding-panel > footer {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;

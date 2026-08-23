@@ -46,11 +46,48 @@ type OnboardingProps = {
   onSaved: (profile: StudentProfile) => void;
 };
 
+function useDocumentScrollLock(locked: boolean) {
+  useEffect(() => {
+    if (!locked) return;
+
+    const root = document.documentElement;
+    const body = document.body;
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
+    const previousBodyStyles = {
+      position: body.style.position,
+      inset: body.style.inset,
+      top: body.style.top,
+      width: body.style.width,
+    };
+
+    root.classList.add("product-modal-open");
+    body.classList.add("product-modal-open");
+    body.style.position = "fixed";
+    body.style.inset = "0";
+    body.style.top = `-${scrollY}px`;
+    body.style.width = "100%";
+
+    return () => {
+      root.classList.remove("product-modal-open");
+      body.classList.remove("product-modal-open");
+      body.style.position = previousBodyStyles.position;
+      body.style.inset = previousBodyStyles.inset;
+      body.style.top = previousBodyStyles.top;
+      body.style.width = previousBodyStyles.width;
+      window.scrollTo(scrollX, scrollY);
+    };
+  }, [locked]);
+}
+
 export function OnboardingPanel({ profile, onSaved }: OnboardingProps) {
   const [values, setValues] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  const open = Boolean(profile && !profile.onboarding_completed);
 
-  if (!profile || profile.onboarding_completed) return null;
+  useDocumentScrollLock(open);
+
+  if (!open) return null;
 
   async function save(skip = false) {
     setBusy(true);
@@ -84,25 +121,27 @@ export function OnboardingPanel({ profile, onSaved }: OnboardingProps) {
             <h2>先让城知认识你一点</h2>
           </div>
         </header>
-        <p>
-          这些信息只用于让建议更贴合你。可以留空、随时修改，也可以关闭个性化。
-        </p>
-        <div className="profile-grid">
-          {PROFILE_FIELDS.map((field) => (
-            <label key={field.key}>
-              <span>{field.label}</span>
-              <input
-                value={values[field.key] ?? ""}
-                placeholder={field.placeholder}
-                onChange={(event) =>
-                  setValues((current) => ({
-                    ...current,
-                    [field.key]: event.target.value,
-                  }))
-                }
-              />
-            </label>
-          ))}
+        <div className="onboarding-scroll-area">
+          <p>
+            这些信息只用于让建议更贴合你。可以留空、随时修改，也可以关闭个性化。
+          </p>
+          <div className="profile-grid">
+            {PROFILE_FIELDS.map((field) => (
+              <label key={field.key}>
+                <span>{field.label}</span>
+                <input
+                  value={values[field.key] ?? ""}
+                  placeholder={field.placeholder}
+                  onChange={(event) =>
+                    setValues((current) => ({
+                      ...current,
+                      [field.key]: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+            ))}
+          </div>
         </div>
         <footer>
           <button type="button" disabled={busy} onClick={() => void save(true)}>

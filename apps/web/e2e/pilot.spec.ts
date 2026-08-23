@@ -13,6 +13,45 @@ async function finishOnboarding(page: import("@playwright/test").Page) {
   }
 }
 
+test("mobile onboarding locks the page and keeps actions anchored", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name === "desktop-chromium");
+
+  await page.goto("/");
+  const panel = page.locator(".onboarding-panel");
+  const scrollArea = page.locator(".onboarding-scroll-area");
+  const footer = page.locator(".onboarding-panel > footer");
+
+  await expect(panel).toBeVisible();
+  await expect(page.locator("html")).toHaveClass(/product-modal-open/);
+  await expect(page.locator("body")).toHaveClass(/product-modal-open/);
+
+  const initialFooter = await footer.boundingBox();
+  expect(initialFooter).not.toBeNull();
+  await scrollArea.evaluate((element) => element.scrollTo({ top: element.scrollHeight }));
+  await page.evaluate(() => window.scrollTo({ top: 120 }));
+
+  const layout = await page.evaluate(() => {
+    const panelElement = document.querySelector<HTMLElement>(".onboarding-panel");
+    const footerElement = document.querySelector<HTMLElement>(
+      ".onboarding-panel > footer",
+    );
+    if (!panelElement || !footerElement) throw new Error("Onboarding panel is missing");
+    const panelRect = panelElement.getBoundingClientRect();
+    const footerRect = footerElement.getBoundingClientRect();
+    return {
+      footerBottomGap: panelRect.bottom - footerRect.bottom,
+      scrollY: window.scrollY,
+    };
+  });
+  const scrolledFooter = await footer.boundingBox();
+
+  expect(scrolledFooter?.y).toBeCloseTo(initialFooter!.y, 0);
+  expect(layout.footerBottomGap).toBeLessThanOrEqual(2);
+  expect(layout.scrollY).toBe(0);
+});
+
 test("anonymous pilot completes question, evidence and history journey", async ({
   page,
 }) => {
