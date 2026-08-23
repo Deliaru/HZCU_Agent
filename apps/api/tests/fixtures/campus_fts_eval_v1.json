@@ -1,7 +1,7 @@
 {
-  "version": 1,
+  "version": 2,
   "frozen_at": "2026-07-27T00:00:00+08:00",
-  "description": "KISS FTS5 retrieval baseline frozen across eight campus domains before acceptance tuning.",
+  "description": "Hybrid retrieval baseline: 48 domain cases plus 12 abstract and noise-heavy regressions.",
   "cases": [
     {
       "id": "calendar-01",
@@ -420,6 +420,105 @@
       "domain": "学校政策",
       "shape": "compound",
       "prompt": "比较普通本科生手册和国际本科生学籍管理规定",
+      "retrieval_queries": ["2023级浙大城市学院本科生学生手册", "国际学生 本科生 学籍管理规定"],
+      "expected_urls": [
+        "https://www.hzcu.edu.cn/fj/67.pdf",
+        "https://www.hzcu.edu.cn/fj/94.pdf"
+      ]
+    },
+    {
+      "id": "abstract-01",
+      "domain": "本科招生",
+      "shape": "fuzzy",
+      "prompt": "工程学院有几个专业",
+      "retrieval_queries": [],
+      "expected_urls": ["https://zs.hzcu.edu.cn/majors.html"]
+    },
+    {
+      "id": "abstract-02",
+      "domain": "本科招生",
+      "shape": "fuzzy",
+      "prompt": "工程学院现在本科专业完整名单是什么",
+      "retrieval_queries": ["工程学院 院系设置", "院系专业 工程学院"],
+      "expected_urls": ["https://zs.hzcu.edu.cn/majors.html"]
+    },
+    {
+      "id": "abstract-03",
+      "domain": "教学与校历",
+      "shape": "fuzzy",
+      "prompt": "假期回来到底哪天报到和上课",
+      "retrieval_queries": ["2026-2027学年校历"],
+      "expected_urls": ["http://ccpo.hzcu.edu.cn/picture/0/fdd5d1ce5c7f472a96d091803889b1af.png"]
+    },
+    {
+      "id": "abstract-04",
+      "domain": "奖助学金",
+      "shape": "fuzzy",
+      "prompt": "工程学院考研上岸有没有奖，哪些人能拿",
+      "retrieval_queries": ["点对点考研奖学金 评选对象"],
+      "expected_urls": ["http://gc.hzcu.edu.cn/art/2026/4/17/art_405_329135.html"]
+    },
+    {
+      "id": "abstract-05",
+      "domain": "选课",
+      "shape": "fuzzy",
+      "prompt": "课满了还能不能申请进去",
+      "retrieval_queries": ["容量已满课程申请"],
+      "expected_urls": ["http://hzcujwb.hzcu.edu.cn/index.php?a=detail&c=main&id=7341"]
+    },
+    {
+      "id": "abstract-06",
+      "domain": "社团",
+      "shape": "fuzzy",
+      "prompt": "学生社团每年要做的审核是什么",
+      "retrieval_queries": ["学生社团年审"],
+      "expected_urls": ["http://tw.hzcu.edu.cn/redir.php?catalog_id=161&object_id=236870"]
+    },
+    {
+      "id": "abstract-07",
+      "domain": "导师",
+      "shape": "fuzzy",
+      "prompt": "今年哪些老师有资格招硕士生",
+      "retrieval_queries": ["硕士研究生指导教师招生资格名单"],
+      "expected_urls": ["http://iee.hzcu.edu.cn/art/2026/6/22/art_6978_333765.html"]
+    },
+    {
+      "id": "abstract-08",
+      "domain": "竞赛创新",
+      "shape": "fuzzy",
+      "prompt": "国创项目做到一半要交什么检查材料",
+      "retrieval_queries": ["国创 中期检查"],
+      "expected_urls": ["https://sjjx.hzcu.edu.cn/cxxl/ShowNews.aspx?NewsNo=100C54FC3ACDF1BB"]
+    },
+    {
+      "id": "abstract-09",
+      "domain": "专业发展",
+      "shape": "fuzzy",
+      "prompt": "我想换专业，最晚什么时候申请",
+      "retrieval_queries": ["转专业申请 截止时间"],
+      "expected_urls": ["http://hzcujwb.hzcu.edu.cn/index.php?a=detail&c=main&id=7253"]
+    },
+    {
+      "id": "abstract-10",
+      "domain": "学校政策",
+      "shape": "fuzzy",
+      "prompt": "学校处分学生按哪份规定执行",
+      "retrieval_queries": ["2023级浙大城市学院本科生学生手册 学生违纪处分"],
+      "expected_urls": ["https://www.hzcu.edu.cn/fj/67.pdf"]
+    },
+    {
+      "id": "abstract-11",
+      "domain": "选课",
+      "shape": "compound",
+      "prompt": "这学期选课时间和课满后的处理办法一起查",
+      "retrieval_queries": ["2026-2027学年第一学期 选课时间安排", "容量已满课程申请"],
+      "expected_urls": ["http://hzcujwb.hzcu.edu.cn/index.php?a=detail&c=main&id=7341"]
+    },
+    {
+      "id": "abstract-12",
+      "domain": "学校政策",
+      "shape": "comparison",
+      "prompt": "普通本科生和国际本科生的学籍规定是不是同一份",
       "retrieval_queries": ["2023级浙大城市学院本科生学生手册", "国际学生 本科生 学籍管理规定"],
       "expected_urls": [
         "https://www.hzcu.edu.cn/fj/67.pdf",

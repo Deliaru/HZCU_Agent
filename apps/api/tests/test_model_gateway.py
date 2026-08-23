@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -11,6 +12,7 @@ from hzcu_agent.services.model_gateway import (
     DemoModelGateway,
     ModelConfigurationError,
     OpenAIModelGateway,
+    StructuredModelOutputError,
 )
 from hzcu_agent.services.model_runtime import ModelEndpointConfig
 from hzcu_agent.services.performance import (
@@ -373,6 +375,93 @@ async def test_openai_gateway_retries_when_structured_response_is_missing(monkey
     assert "text_format" not in create_calls[0]
     assert "Return exactly one JSON object" in create_calls[0]["instructions"]
     assert "JSON Schema" in create_calls[0]["instructions"]
+
+
+@pytest.mark.asyncio
+async def test_openai_gateway_runs_one_corrective_repair_after_invalid_json(
+    monkeypatch,
+) -> None:
+    parsed = SemanticDossier(
+        goal_hypotheses=[GoalHypothesis(goal="查询专业目录", confidence=0.9)]
+    )
+    create_calls: list[dict] = []
+
+    class FakeResponses:
+        async def parse(self, **kwargs):
+            return SimpleNamespace(
+                output_parsed=None,
+                output_text='{"goal_hypotheses":"broken"}',
+            )
+
+        async def create(self, **kwargs):
+            create_calls.append(kwargs)
+            output = "{}" if len(create_calls) == 1 else parsed.model_dump_json()
+            return SimpleNamespace(output_text=output)
+
+    class FakeClient:
+        responses = FakeResponses()
+
+        async def close(self):
+            return None
+
+    monkeypatch.setattr(model_gateway, "AsyncOpenAI", lambda **kwargs: FakeClient())
+    gateway = OpenAIModelGateway(
+        Settings(model_provider="openai", openai_api_key="test-only-key")
+    )
+
+    result = await gateway.understand(
+        original_query="工程学院有几个专业？",
+        conversation_context=[],
+        profile_context={},
+        current_time=datetime(2026, 8, 23, tzinfo=UTC),
+    )
+    await gateway.close()
+
+    assert result == parsed
+    assert len(create_calls) == 2
+    assert json.loads(create_calls[0]["input"])["invalid_output"] == (
+        '{"goal_hypotheses":"broken"}'
+    )
+    assert "Validation summary" in create_calls[1]["instructions"]
+
+
+@pytest.mark.asyncio
+async def test_openai_gateway_raises_typed_error_after_bounded_repairs(
+    monkeypatch,
+) -> None:
+    create_calls: list[dict] = []
+
+    class FakeResponses:
+        async def parse(self, **kwargs):
+            return SimpleNamespace(output_parsed=None)
+
+        async def create(self, **kwargs):
+            create_calls.append(kwargs)
+            return SimpleNamespace(output_text="{\"wrong\": true}")
+
+    class FakeClient:
+        responses = FakeResponses()
+
+        async def close(self):
+            return None
+
+    monkeypatch.setattr(model_gateway, "AsyncOpenAI", lambda **kwargs: FakeClient())
+    gateway = OpenAIModelGateway(
+        Settings(model_provider="openai", openai_api_key="test-only-key")
+    )
+
+    with pytest.raises(StructuredModelOutputError) as caught:
+        await gateway.understand(
+            original_query="工程学院有几个专业？",
+            conversation_context=[],
+            profile_context={},
+            current_time=datetime(2026, 8, 23, tzinfo=UTC),
+        )
+    await gateway.close()
+
+    assert len(create_calls) == 2
+    assert caught.value.role == "understand"
+    assert caught.value.details["output_length"] > 0
 
 
 @pytest.mark.asyncio

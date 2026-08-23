@@ -16,6 +16,7 @@ from hzcu_agent.ingestion.parsers import (
     expected_parser_version,
     parse_document,
 )
+from hzcu_agent.ingestion.search_index import refresh_source_search_profile
 from hzcu_agent.ingestion.security import (
     SourceUrlRejected,
     canonicalize_source_url,
@@ -85,6 +86,21 @@ class IngestionService:
 
     async def close(self) -> None:
         await self._fetcher.close()
+
+    def source_summaries(
+        self,
+        allowed_visibilities: frozenset[str],
+    ) -> list[dict[str, str]]:
+        return [
+            {
+                "id": source.id,
+                "name": source.name,
+                "owner_department": source.owner_department,
+                "authority_level": source.authority_level,
+            }
+            for source in self._registry.sources
+            if source.enabled and source.visibility in allowed_visibilities
+        ]
 
     async def sync_all(
         self,
@@ -195,13 +211,15 @@ class IngestionService:
             raise
         counts = Counter(results)
         status = "completed_with_errors" if counts["failed"] else "completed"
-        return await self._finish_run(
+        outcome = await self._finish_run(
             run.id,
             source.id,
             counts,
             discovered_count=len(resources),
             status=status,
         )
+        await self._refresh_search_profile(source.id)
+        return outcome
 
     async def ingest_live_evidence(self, evidence: Evidence) -> Evidence:
         source = self._registry.get(evidence.source_id) if evidence.source_id else None
@@ -296,7 +314,23 @@ class IngestionService:
                 resource.current_version_id = version.id
             await session.commit()
             evidence.document_version_id = version.id
+        await self._refresh_search_profile(source.id)
         return evidence
+
+    async def _refresh_search_profile(self, source_id: str) -> None:
+        try:
+            await refresh_source_search_profile(self._database, source_id)
+        except Exception:
+            # The source index is disposable. A failed refresh must never turn
+            # a successful mirror sync into a source failure; API startup can
+            # rebuild it from the current-version ledger.
+            logger.exception(
+                "Source search profile refresh failed",
+                extra={
+                    "event": "source.search_profile.failed",
+                    "source_id": source_id,
+                },
+            )
 
     async def ingest_payload(
         self,

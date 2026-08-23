@@ -69,17 +69,24 @@ class ToolGateway:
             {
                 "name": "search_campus_memory",
                 "description": (
-                    "用模型选择的表述检索本地镜像当前版本，返回候选材料、相关正文"
+                    "用一个证据目标及最多三个正式近义表达检索本地镜像当前版本，"
+                    "返回候选材料、相关正文"
                     "片段和 document_version_id；"
                     f"{scope_description}。"
-                    "每个独立信息点单独调用；本地未命中时先换用更短或更正式的"
-                    "表述重试一次。搜索片段只用于发现材料；当回答依赖表格、附件"
+                    "source_ids 只能从 corpus_sources 选择且仅作软排序，不能排除"
+                    "其他来源。每个独立信息点单独调用；搜索片段只用于发现材料；"
+                    "当回答依赖表格、附件"
                     "后半部分或跨段上下文时，模型应选择候选并使用 inspect、find、"
                     "read-locator/read-segment 原子工具继续探索。"
                 ),
                 "input_schema": CampusMemorySearchArguments.model_json_schema(),
                 "side_effect": "read_only",
                 "authority": "registered_official_sources",
+                "corpus_sources": (
+                    self._ingestion.source_summaries(memory_visibility)
+                    if hasattr(self._ingestion, "source_summaries")
+                    else []
+                ),
             },
         ]
         if self._campus_documents is not None:

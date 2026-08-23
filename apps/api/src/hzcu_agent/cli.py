@@ -13,6 +13,10 @@ from hzcu_agent.config import Settings, get_settings
 from hzcu_agent.db import Database
 from hzcu_agent.ingestion.catalog import SourceRegistry
 from hzcu_agent.ingestion.indexing import DocumentIndexer
+from hzcu_agent.ingestion.search_index import (
+    rebuild_source_search_index,
+    recreate_source_search_index,
+)
 from hzcu_agent.ingestion.service import IngestionService
 from hzcu_agent.local_model_config import load_local_openai_config
 from hzcu_agent.models import SourceDefinitionRecord, SyncRun, utc_now
@@ -78,6 +82,10 @@ def build_parser() -> argparse.ArgumentParser:
     subcommands.add_parser(
         "reindex-memory",
         help="Rebuild semantic chunks, vectors and structured entities for all versions.",
+    )
+    subcommands.add_parser(
+        "rebuild-search",
+        help="Recreate only disposable v1/v2 document FTS and source routing indexes.",
     )
     subcommands.add_parser(
         "pilot-preflight",
@@ -198,7 +206,10 @@ async def _run(args: argparse.Namespace) -> int:
             return 0
 
         if args.command == "search-memory":
-            memory = CampusMemorySearchTool(database)
+            memory = CampusMemorySearchTool(
+                database,
+                strategy=settings.retrieval_strategy,
+            )
             result = await memory.run(
                 CampusMemorySearchArguments(query=args.query, top_k=args.top_k),
                 trace_id="trace_cli",
@@ -214,14 +225,42 @@ async def _run(args: argparse.Namespace) -> int:
 
         if args.command == "reindex-memory":
             outcomes = await DocumentIndexer().rebuild_versions(database)
-            search_versions = await CampusMemorySearchTool(database).rebuild()
+            search_versions = await CampusMemorySearchTool(
+                database,
+                strategy=settings.retrieval_strategy,
+            ).rebuild()
+            source_profiles = await rebuild_source_search_index(database)
             print(
                 json.dumps(
                     {
                         "indexed_versions": len(outcomes),
                         "search_versions": search_versions,
+                        "source_profiles": source_profiles,
                         "chunks": sum(outcome.chunks for outcome in outcomes),
                         "entities": sum(outcome.entities for outcome in outcomes),
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 0
+
+        if args.command == "rebuild-search":
+            legacy_versions = await CampusMemorySearchTool(
+                database,
+                strategy="fts_v1",
+            ).recreate()
+            hybrid_versions = await CampusMemorySearchTool(
+                database,
+                strategy="hybrid_v2",
+            ).recreate()
+            source_profiles = await recreate_source_search_index(database)
+            print(
+                json.dumps(
+                    {
+                        "legacy_search_versions": legacy_versions,
+                        "hybrid_search_versions": hybrid_versions,
+                        "source_profiles": source_profiles,
                     },
                     ensure_ascii=False,
                     indent=2,
@@ -332,15 +371,25 @@ async def _pilot_preflight(database: Database, settings) -> int:
             revision == "0008_answer_evidence_provenance",
             revision or "missing",
         )
+        search_table = (
+            "campus_search_fts_v2"
+            if settings.retrieval_strategy == "hybrid_v2"
+            else "campus_search_fts_v1"
+        )
         fts_exists = await session.scalar(
             text(
                 "SELECT count(*) FROM sqlite_master "
-                "WHERE type='table' AND name='campus_search_fts_v1'"
-            )
+                "WHERE type='table' AND name=:search_table"
+            ),
+            {"search_table": search_table},
         )
-        add("search.fts_index", bool(fts_exists), "present" if fts_exists else "missing")
+        add(
+            "search.fts_index",
+            bool(fts_exists),
+            f"{search_table}:present" if fts_exists else f"{search_table}:missing",
+        )
         searchable = (
-            await session.scalar(text("SELECT count(*) FROM campus_search_fts_v1"))
+            await session.scalar(text(f"SELECT count(*) FROM {search_table}"))
             if fts_exists
             else 0
         )

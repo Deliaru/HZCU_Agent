@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 from typing import Any
 
 from sqlalchemy import select, update
@@ -28,10 +29,15 @@ from hzcu_agent.schemas import (
     AgentPerformance,
     AnswerVerification,
     Evidence,
+    GoalHypothesis,
     GroundedAnswerComposition,
+    GroundingAssessment,
     GroundingSummary,
+    InvestigationPlan,
     InvestigationStep,
+    PreparedInvestigation,
     SemanticDossier,
+    SemanticSignals,
     ToolError,
     ToolResult,
     VerificationFinding,
@@ -44,7 +50,7 @@ from hzcu_agent.services.grounding import (
     prune_invalid_citations,
     restore_workspace_citation_urls,
 )
-from hzcu_agent.services.model_gateway import ModelGateway
+from hzcu_agent.services.model_gateway import ModelGateway, StructuredModelOutputError
 from hzcu_agent.services.performance import (
     AgentPerformanceTrace,
     bind_performance_trace,
@@ -186,14 +192,30 @@ class AgentCoordinator:
                 task_context["access_scopes"],
                 memory_visibilities=task_context["mirror_access_scopes"],
             )
-            prepared = await self._models.prepare(
-                original_query=task_context["original_query"],
-                conversation_context=task_context["conversation_context"],
-                profile_context=task_context["profile_context"],
-                tool_catalog=tool_catalog,
-                current_time=current_time,
+            try:
+                prepared = await self._models.prepare(
+                    original_query=task_context["original_query"],
+                    conversation_context=task_context["conversation_context"],
+                    profile_context=task_context["profile_context"],
+                    tool_catalog=tool_catalog,
+                    current_time=current_time,
+                )
+            except StructuredModelOutputError as exc:
+                logger.warning(
+                    "Prepare output exhausted structured recovery; using minimal plan",
+                    extra={
+                        "event": "agent.prepare.structured_fallback",
+                        "task_id": task_id,
+                        **exc.details,
+                    },
+                )
+                prepared = self._fallback_prepared_investigation(
+                    task_context["original_query"]
+                )
+            dossier = self._with_answer_shape(
+                prepared.dossier,
+                task_context["original_query"],
             )
-            dossier = prepared.dossier
             plan = prepared.plan
             await self._broker.publish(
                 task_id,
@@ -209,7 +231,10 @@ class AgentCoordinator:
                 },
             )
 
-            initial_steps = self._normalize_initial_steps(plan.steps)
+            initial_steps = self._normalize_initial_steps(
+                plan.steps,
+                original_query=task_context["original_query"],
+            )
             investigation_freshness = (
                 "live_required"
                 if task_context["request_mode"] == "live_reverify"
@@ -296,7 +321,10 @@ class AgentCoordinator:
                                 "error_code": (result.error.code if result.error else None),
                             }
                         )
-                        new_evidence = workspace.merge(result.evidence)
+                        new_evidence = workspace.merge(
+                            result.evidence,
+                            retrieval_scores=self._retrieval_scores(result),
+                        )
                         logger.info(
                             "Agent tool call completed",
                             extra={
@@ -306,6 +334,7 @@ class AgentCoordinator:
                                 "trace_id": result.trace_id,
                                 "evidence_count": len(result.evidence),
                                 "error_code": (result.error.code if result.error else None),
+                                **self._retrieval_diagnostics(result),
                             },
                         )
                         await self._publish_tool_completed(
@@ -325,7 +354,7 @@ class AgentCoordinator:
                         },
                     )
 
-                answer_evidence = workspace.view(lambda items: items[:24])
+                answer_evidence = workspace.ranked(limit=24)
                 await self._broker.publish(
                     task_id,
                     "answer.composing",
@@ -335,21 +364,43 @@ class AgentCoordinator:
                         "evidence_count": len(answer_evidence),
                     },
                 )
-                composition = await self._models.compose(
-                    original_query=task_context["original_query"],
-                    dossier=dossier,
-                    conversation_context=task_context["conversation_context"],
-                    profile_context=task_context["profile_context"],
-                    evidence=answer_evidence,
-                    tool_errors=tool_errors,
-                    tool_observations=tool_observations,
-                    tool_catalog=tool_catalog,
-                    can_research_more=(
-                        round_number < self._settings.max_tool_rounds
-                        and tool_call_count < self._settings.max_tool_calls
-                    ),
-                    current_time=utc_now(),
-                )
+                try:
+                    composition = await self._models.compose(
+                        original_query=task_context["original_query"],
+                        dossier=dossier,
+                        conversation_context=task_context["conversation_context"],
+                        profile_context=task_context["profile_context"],
+                        evidence=answer_evidence,
+                        tool_errors=tool_errors,
+                        tool_observations=tool_observations,
+                        tool_catalog=tool_catalog,
+                        can_research_more=(
+                            round_number < self._settings.max_tool_rounds
+                            and tool_call_count < self._settings.max_tool_calls
+                        ),
+                        current_time=utc_now(),
+                    )
+                except StructuredModelOutputError as exc:
+                    logger.warning(
+                        "Compose output exhausted structured recovery; "
+                        "returning safe evidence desk",
+                        extra={
+                            "event": "agent.compose.structured_fallback",
+                            "task_id": task_id,
+                            **exc.details,
+                        },
+                    )
+                    composition = GroundedAnswerComposition(
+                        answer=self._safe_grounding_fallback(
+                            original_query=task_context["original_query"],
+                            evidence=answer_evidence,
+                        ),
+                        assessment=GroundingAssessment(
+                            status="conditional",
+                            summary="回答模型未能生成可验证结构，已安全降级为证据入口。",
+                            missing_evidence=["可验证的结构化回答"],
+                        ),
+                    )
                 await self._broker.publish(
                     task_id,
                     "evidence.assessed",
@@ -383,18 +434,22 @@ class AgentCoordinator:
             if composition is None:
                 raise RuntimeError("Answer composition did not run")
 
-            evidence = workspace.view(lambda items: items[:24])
+            evidence = workspace.ranked(limit=24)
             composed_answer = composition.answer or self._safe_grounding_fallback(
                 original_query=task_context["original_query"],
                 evidence=evidence,
             )
             answer = self._calibrate_answer(composed_answer, evidence)
+            retrieval_coverage_risk = self._retrieval_coverage_risk(tool_observations)
+            if retrieval_coverage_risk and answer.confidence == "high":
+                answer = answer.model_copy(update={"confidence": "medium"})
             composition = composition.model_copy(update={"answer": answer})
             structural = self._citation_verifier.verify(answer, evidence)
             requires_independent = self._requires_independent_verification(
                 composition=composition,
                 dossier=dossier,
                 structural=structural,
+                retrieval_coverage_risk=retrieval_coverage_risk,
             )
             verification = AnswerVerification(
                 verdict="passed",
@@ -411,14 +466,28 @@ class AgentCoordinator:
                         )
                     },
                 )
-                verification = await self._models.verify(
-                    original_query=task_context["original_query"],
-                    dossier=dossier,
-                    conversation_context=task_context["conversation_context"],
-                    evidence=evidence,
-                    composition=composition,
-                    current_time=utc_now(),
-                )
+                try:
+                    verification = await self._models.verify(
+                        original_query=task_context["original_query"],
+                        dossier=dossier,
+                        conversation_context=task_context["conversation_context"],
+                        evidence=evidence,
+                        composition=composition,
+                        current_time=utc_now(),
+                    )
+                except StructuredModelOutputError as exc:
+                    logger.warning(
+                        "Verifier output exhausted structured recovery; failing closed",
+                        extra={
+                            "event": "agent.verify.structured_fallback",
+                            "task_id": task_id,
+                            **exc.details,
+                        },
+                    )
+                    verification = AnswerVerification(
+                        verdict="research_required",
+                        summary="独立核验未能返回可验证结构，候选结论未被视为已核验。",
+                    )
                 await self._broker.publish(
                     task_id,
                     "answer.verification.completed",
@@ -797,6 +866,8 @@ class AgentCoordinator:
     @staticmethod
     def _normalize_initial_steps(
         steps: list[InvestigationStep],
+        *,
+        original_query: str | None = None,
     ) -> list[InvestigationStep]:
         """Bound the initial local fan-out and make independent FTS calls parallel."""
 
@@ -819,7 +890,25 @@ class AgentCoordinator:
                     can_run_in_parallel=True,
                 )
             )
-        return normalized
+        memory_steps = [
+            step for step in normalized if step.tool == "search_campus_memory"
+        ]
+        if len(memory_steps) != 1 or not (original_query or "").strip():
+            return normalized
+
+        memory_step = memory_steps[0]
+        original = (original_query or "").strip()[:200]
+        model_query = (memory_step.arguments.query or "").strip()
+        variants = [
+            value
+            for value in (original, *memory_step.arguments.queries)
+            if value.strip() and value.strip() != model_query
+        ]
+        arguments = memory_step.arguments.model_copy(
+            update={"queries": list(dict.fromkeys(variants))[:3]}
+        )
+        enriched = memory_step.model_copy(update={"arguments": arguments})
+        return [enriched if step.id == memory_step.id else step for step in normalized]
 
     @staticmethod
     def _normalize_follow_up_steps(
@@ -862,6 +951,8 @@ class AgentCoordinator:
         bounded_query = (step.arguments.query or "").strip() or None
         arguments = step.arguments.__class__(
             query=bounded_query,
+            queries=step.arguments.queries[:3],
+            source_ids=step.arguments.source_ids[:3],
             top_k=step.arguments.top_k,
         )
         update: dict[str, Any] = {"arguments": arguments}
@@ -875,6 +966,7 @@ class AgentCoordinator:
         composition: GroundedAnswerComposition,
         dossier: SemanticDossier,
         structural: StructuralGroundingResult,
+        retrieval_coverage_risk: bool = False,
     ) -> bool:
         """Decide whether the ~48s synchronous semantic Verifier must run.
 
@@ -889,6 +981,98 @@ class AgentCoordinator:
             dossier.risk.level in {"academic_high", "sensitive"}
             or composition.assessment.status == "conflicting"
             or not structural.passed
+            or retrieval_coverage_risk
+        )
+
+    @staticmethod
+    def _retrieval_scores(result: ToolResult) -> dict[str, float]:
+        ranking = result.data.get("ranking")
+        if not isinstance(ranking, list):
+            return {}
+        scores: dict[str, float] = {}
+        for item in ranking:
+            if not isinstance(item, dict):
+                continue
+            url = item.get("canonical_url")
+            score = item.get("score")
+            if isinstance(url, str) and isinstance(score, (int, float)):
+                scores[url] = float(score)
+        return scores
+
+    @staticmethod
+    def _retrieval_diagnostics(result: ToolResult) -> dict[str, Any]:
+        if result.tool != "search_campus_memory":
+            return {}
+        data = result.data
+        ranking = data.get("candidate_ranking")
+        return {
+            "query_variants": data.get("query_variants", []),
+            "source_hints": data.get("source_hints", []),
+            "routed_sources": data.get("routed_sources", []),
+            "retrieval_channels": data.get("channel_counts", {}),
+            "candidate_ranking": ranking[:12] if isinstance(ranking, list) else [],
+            "deduplication": data.get("deduplication", {}),
+            "coverage_risk": data.get("coverage_risk"),
+        }
+
+    @staticmethod
+    def _retrieval_coverage_risk(observations: list[dict[str, Any]]) -> bool:
+        return any(
+            item.get("tool") == "search_campus_memory"
+            and isinstance(item.get("data"), dict)
+            and item["data"].get("coverage_risk") is True
+            for item in observations
+        )
+
+    @staticmethod
+    def _with_answer_shape(dossier: SemanticDossier, query: str) -> SemanticDossier:
+        if dossier.signals.answer_shape != "fact":
+            return dossier
+        if re.search(r"区别|比较|对比|相比|分别有什么不同", query):
+            answer_shape = "comparison"
+        elif re.search(r"几个|多少|哪些|有什么|列出|列表|名单|目录|一览|全部|所有|分别", query):
+            answer_shape = "enumeration"
+        else:
+            return dossier
+        return dossier.model_copy(
+            update={
+                "signals": dossier.signals.model_copy(
+                    update={"answer_shape": answer_shape}
+                )
+            }
+        )
+
+    @staticmethod
+    def _fallback_prepared_investigation(query: str) -> PreparedInvestigation:
+        bounded_query = query.strip()[:200] or "校园信息查询"
+        return PreparedInvestigation(
+            dossier=SemanticDossier(
+                goal_hypotheses=[
+                    GoalHypothesis(
+                        goal=bounded_query,
+                        confidence=1.0,
+                        support=["用户原始问题"],
+                        required_evidence=["登记校园来源中的直接官方材料"],
+                    )
+                ],
+                signals=SemanticSignals(freshness="current"),
+                uncertainties=["结构化语义准备失败，保留原问题执行最小检索。"],
+            ),
+            plan=InvestigationPlan(
+                objective=bounded_query,
+                steps=[
+                    InvestigationStep(
+                        id="structured-fallback-memory",
+                        purpose="使用用户原始表达检索登记校园镜像",
+                        tool="search_campus_memory",
+                        arguments={"query": bounded_query, "top_k": 12},
+                        can_run_in_parallel=True,
+                        success_condition="取得至少一条直接相关的当前官方材料",
+                    )
+                ],
+                stop_conditions=["取得可核验的直接官方材料"],
+                fallbacks=["本地多路检索无结果时再进行实时官方搜索"],
+            ),
         )
 
     @staticmethod
@@ -1246,11 +1430,22 @@ class AgentCoordinator:
             if evidence
             else "本轮没有取得足以形成校园事实结论的材料。"
         )
+        evidence_links = "\n".join(
+            f"- [查看：{item.title}](<{item.canonical_url}>)"
+            for item in evidence[:5]
+            if item.canonical_url.startswith(("http://", "https://"))
+        )
+        links_section = (
+            f"\n\n你可以先核对这些已检索到的官方材料：\n\n{evidence_links}"
+            if evidence_links
+            else ""
+        )
         return AgentAnswer(
             headline="这次回答未通过证据校验",
             answer_markdown=(
                 f"关于“{original_query}”，{evidence_note}"
                 "为避免把相关页面误写成确定结论，我暂不输出未经支持的校园事实。"
+                f"{links_section}"
             ),
             next_actions=["继续实时调查相关官方栏目"],
             confidence="low",

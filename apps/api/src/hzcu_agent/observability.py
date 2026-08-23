@@ -23,6 +23,19 @@ EXTRA_FIELDS = (
     "trace_id",
     "evidence_count",
     "error_code",
+    "role",
+    "attempt",
+    "output_length",
+    "output_sha256",
+    "error_types",
+    "error_paths",
+    "query_variants",
+    "source_hints",
+    "routed_sources",
+    "retrieval_channels",
+    "candidate_ranking",
+    "deduplication",
+    "coverage_risk",
 )
 
 

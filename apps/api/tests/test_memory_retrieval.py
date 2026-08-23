@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 from sqlalchemy import select, text
+from sqlalchemy.exc import OperationalError
 
 from hzcu_agent.config import Settings
 from hzcu_agent.db import Database
@@ -54,6 +55,7 @@ async def _add_document(
     published_at: datetime | None = None,
     resource_type: str = "html",
     media_type: str = "text/html",
+    metadata: dict | None = None,
 ) -> str:
     version_id = new_id("ver")
     resource_id = new_id("res")
@@ -106,7 +108,7 @@ async def _add_document(
                 observed_at=now,
                 parser_version="test_html-v6",
                 quality_status=quality,
-                document_metadata={},
+                document_metadata=metadata or {},
             )
         )
         await session.flush()
@@ -133,7 +135,7 @@ async def test_fts_initializes_backfills_and_tracks_new_versions(tmp_path: Path)
     )
     await memory.initialize()
     async with database.session_factory() as session:
-        indexed_before = await session.scalar(text("SELECT count(*) FROM campus_search_fts_v1"))
+        indexed_before = await session.scalar(text("SELECT count(*) FROM campus_search_fts_v2"))
 
     second_id = await _add_document(
         database,
@@ -147,12 +149,14 @@ async def test_fts_initializes_backfills_and_tracks_new_versions(tmp_path: Path)
         "trace-second",
     )
     rebuilt = await memory.rebuild()
+    recreated = await memory.recreate()
 
     assert [item.document_version_id for item in first.evidence] == [first_id]
     assert [item.document_version_id for item in second.evidence] == [second_id]
-    assert second.data["exact_short_terms"] == ["校创"]
+    assert "校创" in second.data["exact_short_terms"]
     assert indexed_before == 1
     assert rebuilt == 2
+    assert recreated == 2
     await database.close()
 
 
@@ -302,7 +306,7 @@ async def test_title_weight_and_url_dedup_preserve_fts_order(tmp_path: Path) -> 
 
     assert result.evidence[0].document_version_id == title_id
     assert len({item.canonical_url for item in result.evidence}) == len(result.evidence)
-    assert result.data["retrieval"] == "sqlite-fts5-trigram-bm25"
+    assert result.data["retrieval"] == "sqlite-fts5-hybrid-rrf"
     await database.close()
 
 
@@ -576,7 +580,7 @@ async def test_zero_hit_long_phrase_uses_business_agnostic_lexical_backoff(
     )
 
     assert requirements.data["strict_candidate_rows"] == 0
-    assert requirements.data["match_mode"] == "lexical_backoff"
+    assert requirements.data["match_mode"] == "relaxed"
     assert {item.document_version_id for item in requirements.evidence[:2]} == {
         notice_id,
         handbook_id,
@@ -584,10 +588,211 @@ async def test_zero_hit_long_phrase_uses_business_agnostic_lexical_backoff(
     notice = next(item for item in requirements.evidence if item.document_version_id == notice_id)
     assert "每生每年6000元" in notice.excerpt
     assert regulations.data["strict_candidate_rows"] == 0
-    assert regulations.data["match_mode"] == "lexical_backoff"
+    assert regulations.data["match_mode"] == "relaxed"
     assert regulations.evidence[0].document_version_id == handbook_id
     assert requirements.data["lexical_backoff_terms"]
     assert regulations.data["lexical_backoff_terms"]
+    await database.close()
+
+
+@pytest.mark.asyncio
+async def test_abstract_enumeration_recalls_scope_page_without_source_hint(
+    tmp_path: Path,
+) -> None:
+    database = await _database(tmp_path)
+    expected_id = await _add_document(
+        database,
+        source_id="undergraduate-admissions",
+        uri="https://example.test/majors",
+        title="院系专业",
+        body=(
+            "首页\n院系专业\n院系设置\n工程学院\n能源与环境系统工程\n"
+            "智能建造\n智能制造工程\n机械电子工程\n土木工程\n招生咨询\n联系我们"
+        ),
+    )
+    for index in range(24):
+        await _add_document(
+            database,
+            source_id="engineering-site",
+            uri=f"https://example.test/engineering/{index}",
+            title=f"工程学院2025级本科专业培养方案研讨材料 {index}",
+            body="工程学院围绕智能建造专业培养方案开展研讨。",
+        )
+    memory = CampusMemorySearchTool(database)
+
+    result = await memory.run(
+        CampusMemorySearchArguments(query="工程学院有几个专业", top_k=12),
+        "trace-abstract-enumeration",
+    )
+
+    assert expected_id in {
+        item.document_version_id for item in result.evidence[:3]
+    }
+    assert {item.source_id for item in result.evidence[:6]} >= {
+        "undergraduate-admissions",
+        "engineering-site",
+    }
+    assert result.data["answer_shape"] == "enumeration"
+    assert result.data["coverage_risk"] is False
+    await database.close()
+
+
+@pytest.mark.asyncio
+async def test_abstract_enumeration_ignores_answer_format_instructions(
+    tmp_path: Path,
+) -> None:
+    database = await _database(tmp_path)
+    expected_id = await _add_document(
+        database,
+        source_id="undergraduate-admissions",
+        uri="https://example.test/majors",
+        title="院系专业",
+        body=(
+            "首页\n院系专业\n院系设置\n工程学院\n能源与环境系统工程\n"
+            "智能建造\n智能制造工程\n机械电子工程\n土木工程\n招生咨询\n联系我们"
+        ),
+    )
+    for index in range(24):
+        await _add_document(
+            database,
+            source_id="engineering-site",
+            uri=f"https://example.test/engineering/{index}",
+            title=f"工程学院2025级本科专业培养方案研讨材料 {index}",
+            body="工程学院围绕智能建造专业培养方案开展研讨。",
+        )
+    memory = CampusMemorySearchTool(database)
+
+    result = await memory.run(
+        CampusMemorySearchArguments(
+            query="工程学院有几个专业？请列出全部专业名称。",
+            top_k=12,
+        ),
+        "trace-answer-format-instructions",
+    )
+
+    assert expected_id in {
+        item.document_version_id for item in result.evidence[:3]
+    }
+    assert result.data["answer_shape"] == "enumeration"
+    assert result.data["coverage_risk"] is False
+    await database.close()
+
+
+@pytest.mark.asyncio
+async def test_source_hints_boost_but_never_filter_other_sources(tmp_path: Path) -> None:
+    database = await _database(tmp_path)
+    expected_id = await _add_document(
+        database,
+        source_id="authoritative-source",
+        uri="https://example.test/complete-list",
+        title="学院完整名单",
+        body="学院完整名单包括工程学院、商学院、医学院和法学院。",
+    )
+    await _add_document(
+        database,
+        source_id="hinted-source",
+        uri="https://example.test/unrelated",
+        title="工程学院新闻",
+        body="工程学院召开教师会议。",
+    )
+    memory = CampusMemorySearchTool(database)
+
+    result = await memory.run(
+        CampusMemorySearchArguments(
+            query="学院完整名单",
+            source_ids=["hinted-source"],
+            top_k=8,
+        ),
+        "trace-soft-source",
+    )
+
+    assert expected_id in {item.document_version_id for item in result.evidence}
+    await database.close()
+
+
+@pytest.mark.asyncio
+async def test_broken_source_routing_index_falls_back_to_global_retrieval(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = await _database(tmp_path)
+    expected_id = await _add_document(
+        database,
+        source_id="teaching-source",
+        uri="https://example.test/course-capacity",
+        title="课程容量申请安排",
+        body="课程容量已满时可以在教务系统提交容量申请。",
+    )
+
+    async def broken_source_index(_database: Database) -> None:
+        raise OperationalError("source index unavailable", {}, RuntimeError())
+
+    monkeypatch.setattr(
+        "hzcu_agent.tools.campus_hybrid.ensure_source_search_index",
+        broken_source_index,
+    )
+    memory = CampusMemorySearchTool(database)
+
+    result = await memory.run(
+        CampusMemorySearchArguments(query="课程容量申请", top_k=8),
+        "trace-source-index-fallback",
+    )
+
+    assert expected_id in {item.document_version_id for item in result.evidence}
+    assert result.data["routed_sources"] == []
+    await database.close()
+
+
+@pytest.mark.asyncio
+async def test_article_images_collapse_to_parent_but_standalone_images_survive(
+    tmp_path: Path,
+) -> None:
+    database = await _database(tmp_path)
+    parent_uri = "https://example.test/admissions-list"
+    await _add_document(
+        database,
+        source_id="admissions-source",
+        uri=parent_uri,
+        title="本科招生完整名单",
+        body="本科招生完整名单\n工程学院\n商学院\n医学院\n法学院",
+    )
+    child_uri = "https://example.test/image.png"
+    await _add_document(
+        database,
+        source_id="admissions-source",
+        uri=child_uri,
+        title="image.png",
+        body="本科招生完整名单 工程学院 商学院 医学院 法学院",
+        resource_type="image",
+        media_type="image/png",
+        metadata={"article_image": True, "parent_uri": parent_uri},
+    )
+    calendar_id = await _add_document(
+        database,
+        source_id="calendar-source",
+        uri="https://example.test/calendar.png",
+        title="2026-2027学年校历_01.png",
+        body="2026-2027学年校历 老生报到9月13日 本科生开课9月14日",
+        resource_type="image",
+        media_type="image/png",
+        metadata={"article_image": False},
+    )
+    memory = CampusMemorySearchTool(database)
+
+    list_result = await memory.run(
+        CampusMemorySearchArguments(query="本科招生完整名单", top_k=8),
+        "trace-parent-image",
+    )
+    calendar_result = await memory.run(
+        CampusMemorySearchArguments(query="2026-2027学年校历", top_k=8),
+        "trace-standalone-image",
+    )
+
+    assert parent_uri in {item.canonical_url for item in list_result.evidence}
+    assert child_uri not in {item.canonical_url for item in list_result.evidence}
+    assert calendar_id in {
+        item.document_version_id for item in calendar_result.evidence
+    }
     await database.close()
 
 

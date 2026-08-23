@@ -112,6 +112,40 @@ def test_evidence_workspace_preserves_model_selected_full_document() -> None:
     assert len(excerpt) > 3_600
 
 
+def test_evidence_workspace_globally_ranks_across_tool_calls() -> None:
+    workspace = EvidenceWorkspace("task_abcdef1234567890")
+    early = _evidence("https://gc.hzcu.edu.cn/old").model_copy(
+        update={"source_id": "engineering-source"}
+    )
+    authoritative = _evidence("https://zs.hzcu.edu.cn/majors").model_copy(
+        update={"source_id": "admissions-source"}
+    )
+
+    workspace.merge([early], retrieval_scores={early.canonical_url: 0.05})
+    workspace.merge(
+        [authoritative],
+        retrieval_scores={authoritative.canonical_url: 0.25},
+    )
+
+    assert workspace.ranked(limit=2)[0].canonical_url == authoritative.canonical_url
+
+
+def test_answer_shape_has_deterministic_enumeration_fallback() -> None:
+    dossier = SemanticDossier(
+        goal_hypotheses=[GoalHypothesis(goal="了解工程学院", confidence=0.8)]
+    )
+
+    updated = AgentCoordinator._with_answer_shape(dossier, "工程学院有几个专业")
+
+    assert updated.signals.answer_shape == "enumeration"
+
+    comparison = AgentCoordinator._with_answer_shape(
+        dossier,
+        "比较两个学期分别有哪些选课阶段",
+    )
+    assert comparison.signals.answer_shape == "comparison"
+
+
 def test_citation_verifier_checks_claim_ids_support_and_urls_without_semantic_regex() -> None:
     evidence = _evidence("https://jwc.hzcu.edu.cn/notice/1")
     evidence = evidence.model_copy(update={"evidence_id": "ev001_task"})
@@ -599,6 +633,15 @@ def test_real_risk_signals_still_force_the_semantic_verifier() -> None:
     )
     assert (
         AgentCoordinator._requires_independent_verification(
+            composition=_composition(),
+            dossier=_dossier(),
+            structural=_structural([]),
+            retrieval_coverage_risk=True,
+        )
+        is True
+    )
+    assert (
+        AgentCoordinator._requires_independent_verification(
             composition=_composition(status="conflicting"),
             dossier=_dossier(),
             structural=_structural([]),
@@ -648,7 +691,14 @@ def test_initial_memory_plan_is_bounded_and_parallel() -> None:
 
     assert [step.id for step in normalized] == ["memory-0", "memory-1", "memory-2"]
     assert all(step.can_run_in_parallel for step in normalized)
-    assert all(set(step.arguments.tool_payload()) == {"query", "top_k"} for step in normalized)
+    assert all(
+        set(step.arguments.tool_payload()) == {"query", "source_ids", "top_k"}
+        for step in normalized
+    )
+    assert all(
+        step.arguments.source_ids == ["model-hint-must-be-removed"]
+        for step in normalized
+    )
 
 
 def test_memory_query_preserves_the_model_selected_expression() -> None:
@@ -672,6 +722,31 @@ def test_memory_query_preserves_the_model_selected_expression() -> None:
     expected = "课程容量已满 加课 补选 增容 选课 教务处"
     assert initial[0].arguments.query == expected
     assert follow_up[0].arguments.query == expected
+
+
+def test_single_memory_plan_also_preserves_the_original_user_expression() -> None:
+    step = InvestigationStep(
+        id="memory-original-expression",
+        purpose="检索工程学院专业设置",
+        tool="search_campus_memory",
+        arguments={
+            "query": "工程学院本科专业设置",
+            "queries": ["工程学院本科专业目录"],
+            "top_k": 8,
+        },
+        success_condition="取得完整专业范围材料",
+    )
+
+    normalized = AgentCoordinator._normalize_initial_steps(
+        [step],
+        original_query="工程学院有几个专业？请列出全部专业名称。",
+    )
+
+    assert normalized[0].arguments.query == "工程学院本科专业设置"
+    assert normalized[0].arguments.queries == [
+        "工程学院有几个专业？请列出全部专业名称。",
+        "工程学院本科专业目录",
+    ]
 
 
 def test_memory_plans_drop_calls_without_a_query() -> None:
@@ -785,7 +860,12 @@ def test_disabled_campus_route_is_not_advertised_to_the_model() -> None:
         "read_campus_document_locator",
         "read_campus_document_segment",
     }.issubset(names)
-    assert set(memory_schema["properties"]) == {"query", "top_k"}
+    assert set(memory_schema["properties"]) == {
+        "query",
+        "queries",
+        "source_ids",
+        "top_k",
+    }
     assert set(schemas["inspect_campus_document"]["properties"]) == {
         "document_version_id",
     }

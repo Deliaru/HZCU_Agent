@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import logging
 import re
@@ -56,6 +57,26 @@ class ModelConfigurationError(RuntimeError):
 
 class _StructuredOutputUnavailableError(RuntimeError):
     """The endpoint answered successfully without a schema-conformant result."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        text_value: str = "",
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.text_value = text_value
+        self.details = details or {}
+
+
+class StructuredModelOutputError(RuntimeError):
+    """A bounded structured-output recovery sequence was exhausted."""
+
+    def __init__(self, role: str, details: dict[str, Any]) -> None:
+        super().__init__(f"Structured model output failed for role {role}")
+        self.role = role
+        self.details = details
 
 
 class ModelGateway(Protocol):
@@ -673,6 +694,15 @@ class OpenAIModelGateway:
                                 },
                             )
                             return recovered
+                        previous_output = getattr(exc, "text_value", "")
+                        if not previous_output:
+                            previous_output = _openai_validation_input_text(exc)
+                        validation_details = getattr(exc, "details", None)
+                        if not validation_details:
+                            validation_details = _structured_error_details(
+                                previous_output,
+                                exc,
+                            )
                         logger.warning(
                             "Structured model output failed schema parsing; "
                             "retrying with plain JSON",
@@ -685,6 +715,8 @@ class OpenAIModelGateway:
                             role=role,
                             request=request,
                             schema=schema,
+                            previous_output=previous_output,
+                            validation_details=validation_details,
                         )
                     raise
                 delay = _MODEL_RETRY_DELAYS[attempt]
@@ -757,8 +789,12 @@ class OpenAIModelGateway:
         if isinstance(text_result, str) and text_result.strip():
             try:
                 return _parse_schema_text(schema, text_result)
-            except (ValidationError, ValueError):
-                pass
+            except (ValidationError, ValueError) as exc:
+                raise _StructuredOutputUnavailableError(
+                    f"Model {model} returned invalid structured text",
+                    text_value=text_result,
+                    details=_structured_error_details(text_result, exc),
+                ) from exc
 
         raise _StructuredOutputUnavailableError(
             f"Model {model} did not return a structured response"
@@ -770,6 +806,8 @@ class OpenAIModelGateway:
         role: str,
         request: dict[str, Any],
         schema,
+        previous_output: str = "",
+        validation_details: dict[str, Any] | None = None,
     ):
         schema_json = json.dumps(schema.model_json_schema(), ensure_ascii=False)
         repair_request = {key: value for key, value in request.items() if key != "text_format"}
@@ -780,24 +818,71 @@ class OpenAIModelGateway:
             "and no surrounding text. It must validate against this JSON Schema:\n"
             f"{schema_json}"
         )
+        original_input = request.get("input")
+        repair_request["input"] = json.dumps(
+            {
+                "original_input": original_input,
+                "invalid_output": previous_output[:200_000],
+                "validation_summary": _public_validation_summary(
+                    validation_details or {}
+                ),
+            },
+            ensure_ascii=False,
+        )
 
-        trace = current_performance_trace()
-        if trace is None:
-            response = await self._client.responses.create(**repair_request)
-        else:
-            span = trace.start_span("model", f"{role}.structured_retry")
-            trace.mark_unmeasurable(span)
-            try:
+        last_details: dict[str, Any] = {"error_types": ["missing_output"]}
+        for repair_attempt in (1, 2):
+            trace = current_performance_trace()
+            if trace is None:
                 response = await self._client.responses.create(**repair_request)
-            finally:
-                trace.finish_span(span)
+            else:
+                span = trace.start_span("model", f"{role}.structured_retry")
+                trace.mark_unmeasurable(span)
+                try:
+                    response = await self._client.responses.create(**repair_request)
+                finally:
+                    trace.finish_span(span)
 
-        text_result = getattr(response, "output_text", None)
-        if not isinstance(text_result, str) or not text_result.strip():
-            raise _StructuredOutputUnavailableError(
-                "Structured JSON repair response did not contain text"
+            text_result = getattr(response, "output_text", None)
+            if not isinstance(text_result, str) or not text_result.strip():
+                last_details = {
+                    "attempt": repair_attempt,
+                    "output_length": 0,
+                    "output_sha256": None,
+                    "error_types": ["missing_output"],
+                    "error_paths": [],
+                }
+            else:
+                try:
+                    return _parse_schema_text(schema, text_result)
+                except (ValidationError, ValueError) as exc:
+                    last_details = _structured_error_details(text_result, exc)
+                    last_details["attempt"] = repair_attempt
+            logger.warning(
+                "Structured JSON repair did not validate",
+                extra={
+                    "event": "model.structured_output.repair_invalid",
+                    "role": role,
+                    **last_details,
+                },
             )
-        return _parse_schema_text(schema, text_result)
+            if repair_attempt == 1:
+                repair_request["instructions"] = (
+                    f"{repair_request['instructions']}\n\n"
+                    "Your last repair still failed validation. Correct every field listed "
+                    "below. Do not repeat invalid commentary or Markdown. "
+                    f"Validation summary: {json.dumps(_public_validation_summary(last_details))}"
+                )
+                repair_request["input"] = json.dumps(
+                    {
+                        "original_input": original_input,
+                        "invalid_output": (text_result or "")[:200_000],
+                        "validation_summary": _public_validation_summary(last_details),
+                    },
+                    ensure_ascii=False,
+                )
+
+        raise StructuredModelOutputError(role, last_details)
 
     async def close(self) -> None:
         await self._client.close()
@@ -878,6 +963,14 @@ class AnthropicModelGateway(OpenAIModelGateway):
                     )
             except Exception as exc:
                 if not _is_transient_model_error(exc) or attempt >= len(_MODEL_RETRY_DELAYS):
+                    if isinstance(
+                        exc,
+                        (ValidationError, ValueError, _StructuredOutputUnavailableError),
+                    ):
+                        raise StructuredModelOutputError(
+                            role,
+                            _structured_error_details("", exc),
+                        ) from exc
                     raise
                 await asyncio.sleep(_MODEL_RETRY_DELAYS[attempt])
         raise AssertionError("model retry loop exited unexpectedly")
@@ -1197,6 +1290,16 @@ def _parse_openai_validation_input(schema, exc: Exception):
     return None
 
 
+def _openai_validation_input_text(exc: Exception) -> str:
+    if not isinstance(exc, ValidationError):
+        return ""
+    for error in exc.errors():
+        candidate = error.get("input")
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate
+    return ""
+
+
 def _parse_schema_text(schema, text: str):
     """Extract generic JSON candidates and accept only a schema-valid object."""
 
@@ -1217,6 +1320,34 @@ def _parse_schema_text(schema, text: str):
         except (json.JSONDecodeError, ValidationError) as exc:
             last_error = exc
     raise ValueError("Model text did not contain a schema-valid JSON object") from last_error
+
+
+def _structured_error_details(text_value: str, exc: Exception) -> dict[str, Any]:
+    validation = exc
+    if isinstance(exc, ValueError) and exc.__cause__ is not None:
+        validation = exc.__cause__
+    paths: list[str] = []
+    error_types: list[str] = []
+    if isinstance(validation, ValidationError):
+        for item in validation.errors()[:20]:
+            paths.append(".".join(str(part) for part in item.get("loc", ())))
+            error_types.append(str(item.get("type") or "validation_error"))
+    else:
+        error_types.append(type(validation).__name__)
+    encoded = text_value.encode("utf-8")
+    return {
+        "output_length": len(text_value),
+        "output_sha256": hashlib.sha256(encoded).hexdigest() if encoded else None,
+        "error_types": sorted(set(error_types)),
+        "error_paths": sorted(set(path for path in paths if path)),
+    }
+
+
+def _public_validation_summary(details: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "error_types": details.get("error_types", [])[:10],
+        "error_paths": details.get("error_paths", [])[:20],
+    }
 
 
 def _record_demo_model_call(name: str, *, nested: bool = False) -> None:

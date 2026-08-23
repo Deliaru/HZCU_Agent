@@ -13,6 +13,7 @@ from hzcu_agent.db import Database
 from hzcu_agent.ingestion.parsers import normalize_text
 from hzcu_agent.models import new_id
 from hzcu_agent.schemas import Evidence, ToolError, ToolResult
+from hzcu_agent.tools.campus_hybrid import CampusHybridRetriever
 
 _FTS_TABLE = "campus_search_fts_v1"
 _FTS_INSERT_TRIGGER = "campus_search_fts_v1_ai"
@@ -31,6 +32,13 @@ _DASHES = ("-", "—", "–", "－")
 
 class CampusMemorySearchArguments(BaseModel):
     query: Annotated[str, Field(min_length=1, max_length=200)]
+    queries: list[Annotated[str, Field(min_length=1, max_length=200)]] = Field(
+        default_factory=list,
+        max_length=3,
+    )
+    source_ids: list[
+        Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9-]{2,119}$")]
+    ] = Field(default_factory=list, max_length=3)
     top_k: int = Field(default=8, ge=1, le=12)
 
 
@@ -40,8 +48,10 @@ class CampusMemorySearchTool:
     name = "search_campus_memory"
     version = "2.2.0"
 
-    def __init__(self, database: Database) -> None:
+    def __init__(self, database: Database, *, strategy: str = "hybrid_v2") -> None:
         self._database = database
+        self._strategy = strategy
+        self._hybrid = CampusHybridRetriever(database)
         self._initialize_lock = asyncio.Lock()
         self._initialized = False
 
@@ -50,6 +60,10 @@ class CampusMemorySearchTool:
             return
         async with self._initialize_lock:
             if self._initialized:
+                return
+            if self._strategy == "hybrid_v2":
+                await self._hybrid.initialize()
+                self._initialized = True
                 return
             if self._database.engine.dialect.name != "sqlite":
                 raise RuntimeError("校园镜像全文检索仅支持 SQLite FTS5")
@@ -149,6 +163,8 @@ class CampusMemorySearchTool:
         """Rebuild the disposable FTS index from all stored document versions."""
 
         await self.initialize()
+        if self._strategy == "hybrid_v2":
+            return await self._hybrid.rebuild()
         async with self._initialize_lock:
             async with self._database.session_factory() as session:
                 await session.execute(text(f"DELETE FROM {_FTS_TABLE}"))
@@ -166,7 +182,48 @@ class CampusMemorySearchTool:
                 del result
                 return int(count or 0)
 
+    async def recreate(self) -> int:
+        """Drop and recreate the selected disposable FTS index and triggers."""
+
+        if self._strategy == "hybrid_v2":
+            return await self._hybrid.recreate()
+        async with self._initialize_lock:
+            async with self._database.session_factory() as session:
+                for trigger in (
+                    _FTS_INSERT_TRIGGER,
+                    _FTS_DELETE_TRIGGER,
+                    _FTS_UPDATE_TRIGGER,
+                ):
+                    await session.execute(text(f"DROP TRIGGER IF EXISTS {trigger}"))
+                await session.execute(text(f"DROP TABLE IF EXISTS {_FTS_TABLE}"))
+                await session.commit()
+            self._initialized = False
+        await self.initialize()
+        async with self._database.session_factory() as session:
+            count = await session.scalar(text(f"SELECT count(*) FROM {_FTS_TABLE}"))
+        return int(count or 0)
+
     async def run(
+        self,
+        arguments: CampusMemorySearchArguments,
+        trace_id: str,
+        *,
+        allowed_visibilities: frozenset[str] | None = None,
+    ) -> ToolResult:
+        await self.initialize()
+        if self._strategy == "hybrid_v2":
+            return await self._hybrid.run(
+                arguments,
+                trace_id,
+                allowed_visibilities=allowed_visibilities,
+            )
+        return await self._run_legacy(
+            arguments,
+            trace_id,
+            allowed_visibilities=allowed_visibilities,
+        )
+
+    async def _run_legacy(
         self,
         arguments: CampusMemorySearchArguments,
         trace_id: str,

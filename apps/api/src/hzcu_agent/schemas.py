@@ -141,6 +141,14 @@ class SemanticSignals(BaseModel):
     intents: list[str] = Field(default_factory=list)
     freshness: Literal["stable", "current", "live_required"] = "current"
     task_shape: Literal["simple", "compound", "contextual"] = "simple"
+    answer_shape: Literal[
+        "fact",
+        "enumeration",
+        "procedure",
+        "comparison",
+        "timeline",
+        "mixed",
+    ] = "fact"
 
 
 class SemanticEntityGroup(BaseModel):

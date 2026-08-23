@@ -84,7 +84,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             stored_model_config or model_config_from_settings(resolved_settings)
         )
         campus_documents = CampusDocumentExplorer(database)
-        campus_memory = CampusMemorySearchTool(database)
+        campus_memory = CampusMemorySearchTool(
+            database,
+            strategy=resolved_settings.retrieval_strategy,
+        )
         await campus_memory.initialize()
         campus_notices = CampusNoticeSearchTool(
             access=campus_access,

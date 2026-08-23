@@ -27,7 +27,7 @@ def _parser() -> argparse.ArgumentParser:
         / "campus_fts_eval_v1.json",
     )
     parser.add_argument("--database-url")
-    parser.add_argument("--top-k", type=int, default=8)
+    parser.add_argument("--top-k", type=int, default=12)
     parser.add_argument("--output", type=Path)
     return parser
 
@@ -45,8 +45,12 @@ async def _run(args: argparse.Namespace) -> int:
     settings_kwargs = {}
     if args.database_url:
         settings_kwargs["database_url"] = args.database_url
-    database = Database(Settings(**settings_kwargs))
-    memory = CampusMemorySearchTool(database)
+    settings = Settings(**settings_kwargs)
+    database = Database(settings)
+    memory = CampusMemorySearchTool(
+        database,
+        strategy=settings.retrieval_strategy,
+    )
     cold_started = time.perf_counter()
     await memory.initialize()
     cold_index_ms = (time.perf_counter() - cold_started) * 1000
@@ -57,43 +61,47 @@ async def _run(args: argparse.Namespace) -> int:
     formal_top3: list[bool] = []
     expected_url_count = 0
     matched_url_count = 0
+    matched_at_5 = 0
+    matched_at_10 = 0
     try:
         for case in fixture["cases"]:
-            ranked_urls: list[str] = []
-            query_results: list[dict] = []
-            for query in case["retrieval_queries"]:
-                started = time.perf_counter()
-                result = await memory.run(
-                    CampusMemorySearchArguments(query=query, top_k=args.top_k),
-                    trace_id=f"eval-{case['id']}",
-                    allowed_visibilities=frozenset({"public", "campus"}),
-                )
-                elapsed_ms = (time.perf_counter() - started) * 1000
-                durations_ms.append(elapsed_ms)
-                urls = [item.canonical_url for item in result.evidence]
-                for url in urls:
-                    if url not in ranked_urls:
-                        ranked_urls.append(url)
-                query_results.append(
-                    {
-                        "query": query,
-                        "duration_ms": round(elapsed_ms, 3),
-                        "urls": urls,
-                        "error": (
-                            result.error.model_dump(mode="json") if result.error else None
-                        ),
-                    }
-                )
+            started = time.perf_counter()
+            result = await memory.run(
+                CampusMemorySearchArguments(
+                    query=case["prompt"],
+                    queries=case.get("retrieval_queries", [])[:3],
+                    source_ids=case.get("source_ids", [])[:3],
+                    top_k=args.top_k,
+                ),
+                trace_id=f"eval-{case['id']}",
+                allowed_visibilities=frozenset({"public", "campus"}),
+            )
+            elapsed_ms = (time.perf_counter() - started) * 1000
+            durations_ms.append(elapsed_ms)
+            ranked_urls = [item.canonical_url for item in result.evidence]
+            query_results = [
+                {
+                    "query": case["prompt"],
+                    "query_variants": case.get("retrieval_queries", [])[:3],
+                    "source_ids": case.get("source_ids", [])[:3],
+                    "duration_ms": round(elapsed_ms, 3),
+                    "urls": ranked_urls,
+                    "retrieval_trace": result.data,
+                    "error": result.error.model_dump(mode="json") if result.error else None,
+                }
+            ]
             missing = [
                 url for url in case["expected_urls"] if url not in ranked_urls
             ]
             expected_url_count += len(case["expected_urls"])
             matched_url_count += len(case["expected_urls"]) - len(missing)
+            matched_at_5 += sum(url in ranked_urls[:5] for url in case["expected_urls"])
+            matched_at_10 += sum(url in ranked_urls[:10] for url in case["expected_urls"])
             passed = not missing
             domain_totals[case["domain"]].append(passed)
             if (
                 case["shape"] == "formal"
-                and len(case["retrieval_queries"]) == 1
+                and len(case.get("retrieval_queries", [])) == 1
                 and len(case["expected_urls"]) == 1
             ):
                 formal_top3.append(case["expected_urls"][0] in ranked_urls[:3])
@@ -115,11 +123,13 @@ async def _run(args: argparse.Namespace) -> int:
         "fixture_version": fixture["version"],
         "case_count": len(cases),
         "passed_count": passed_count,
-        "top8_case_recall": round(passed_count / len(cases), 4),
-        "top8_expected_url_recall": round(
+        "top_k_case_recall": round(passed_count / len(cases), 4),
+        "top_k_expected_url_recall": round(
             matched_url_count / expected_url_count,
             4,
         ),
+        "canonical_recall_at_5": round(matched_at_5 / expected_url_count, 4),
+        "canonical_recall_at_10": round(matched_at_10 / expected_url_count, 4),
         "formal_title_top3_recall": (
             round(sum(formal_top3) / len(formal_top3), 4) if formal_top3 else None
         ),
@@ -145,7 +155,10 @@ async def _run(args: argparse.Namespace) -> int:
     if args.output:
         args.output.write_text(output, encoding="utf-8")
     print(output)
-    return 0 if summary["top8_expected_url_recall"] >= 0.95 else 1
+    return 0 if (
+        summary["canonical_recall_at_5"] >= 0.95
+        and summary["canonical_recall_at_10"] == 1.0
+    ) else 1
 
 
 def main() -> None:

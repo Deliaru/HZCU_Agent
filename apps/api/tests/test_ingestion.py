@@ -1184,7 +1184,7 @@ async def test_incremental_sync_versions_snapshots_and_memory(tmp_path: Path) ->
     assert len(result.evidence) == 1
     assert result.evidence[0].document_version_id == current.id
     assert "补退选" in result.evidence[0].excerpt
-    assert result.data["retrieval"] == "sqlite-fts5-trigram-bm25"
+    assert result.data["retrieval"] == "sqlite-fts5-hybrid-rrf"
     assert result.data["query"] == "补退选"
 
     await ingestion.close()

@@ -47,6 +47,7 @@ class Settings(BaseSettings):
 
     max_tool_rounds: int = 3
     max_tool_calls: int = 8
+    retrieval_strategy: Literal["fts_v1", "hybrid_v2"] = "hybrid_v2"
     source_registry_path: str | None = None
     snapshot_directory: str = "./data/snapshots"
     sync_max_concurrency: int = 4
