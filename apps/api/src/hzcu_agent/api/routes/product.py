@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime
 from statistics import median
 from typing import Annotated
@@ -142,10 +143,14 @@ async def delete_personal_data(
             )
         ).all()
     )
+    running_tasks: list[asyncio.Task[object]] = []
     for task_id in task_ids:
         task = request.app.state.background_tasks.get(task_id)
-        if task is not None:
+        if task is not None and not task.done():
             task.cancel()
+            running_tasks.append(task)
+    if running_tasks:
+        await asyncio.gather(*running_tasks, return_exceptions=True)
     await session.execute(delete(Conversation).where(Conversation.owner_subject_id == subject_id))
     await session.execute(delete(UserTodo).where(UserTodo.subject_id == subject_id))
     await session.execute(delete(AnswerFeedback).where(AnswerFeedback.subject_id == subject_id))
@@ -598,10 +603,14 @@ async def delete_visitor_data(
                 )
             ).all()
         )
+        running_tasks: list[asyncio.Task[object]] = []
         for task_id in task_ids:
             task = request.app.state.background_tasks.get(task_id)
-            if task is not None:
+            if task is not None and not task.done():
                 task.cancel()
+                running_tasks.append(task)
+        if running_tasks:
+            await asyncio.gather(*running_tasks, return_exceptions=True)
         await session.delete(visitor)
         await session.commit()
     settings = request.app.state.settings

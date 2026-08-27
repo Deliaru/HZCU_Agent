@@ -39,6 +39,36 @@ def _cas_login(client: TestClient) -> None:
     assert callback.status_code == 303
 
 
+def _complete_answer(client: TestClient, prompt: str) -> tuple[str, str, str]:
+    conversation = client.post(
+        "/api/v1/conversations",
+        json={"title": "删除回归会话"},
+        headers=_csrf(client),
+    )
+    assert conversation.status_code == 201
+    conversation_id = conversation.json()["conversation_id"]
+    accepted = client.post(
+        f"/api/v1/conversations/{conversation_id}/messages",
+        json={
+            "message": prompt,
+            "client_message_id": f"delete-regression-{conversation_id}",
+        },
+        headers=_csrf(client),
+    )
+    assert accepted.status_code == 202
+    task_id = accepted.json()["task_id"]
+    task = None
+    for _ in range(100):
+        task = client.get(f"/api/v1/tasks/{task_id}").json()
+        if task["status"] in {"completed", "failed"}:
+            break
+        time.sleep(0.02)
+    assert task is not None
+    assert task["status"] == "completed"
+    assert task["answer_id"]
+    return conversation_id, task_id, task["answer_id"]
+
+
 def test_anonymous_devices_are_isolated_and_support_profile_todos(tmp_path) -> None:
     app = create_app(_settings(tmp_path))
     with TestClient(app) as first:
@@ -157,6 +187,125 @@ def test_message_client_id_is_idempotent_and_conversation_can_be_restored(
         assert first.json()["task_id"] == second.json()["task_id"]
         detail = client.get(f"/api/v1/conversations/{conversation_id}").json()
         assert len([item for item in detail["messages"] if item["role"] == "user"]) == 1
+
+
+def test_personal_data_deletion_cascades_completed_answers(tmp_path) -> None:
+    database_path = tmp_path / "stage6.db"
+    with TestClient(create_app(_settings(tmp_path))) as client:
+        client.get("/api/v1/auth/me")
+        conversation_id, task_id, answer_id = _complete_answer(
+            client,
+            "删除个人数据前先生成一条完整回答。",
+        )
+        assert (
+            client.patch(
+                "/api/v1/profile",
+                json={
+                    "onboarding_completed": True,
+                    "attributes": [
+                        {"attribute_key": "major", "attribute_value": "软件工程"},
+                    ],
+                },
+                headers=_csrf(client),
+            ).status_code
+            == 200
+        )
+        assert (
+            client.post(
+                "/api/v1/todos",
+                json={"title": "删除回归待办", "source_answer_id": answer_id},
+                headers=_csrf(client),
+            ).status_code
+            == 201
+        )
+        assert (
+            client.put(
+                f"/api/v1/answers/{answer_id}/feedback",
+                json={"rating": "helpful"},
+                headers=_csrf(client),
+            ).status_code
+            == 200
+        )
+
+        deleted = client.delete("/api/v1/profile", headers=_csrf(client))
+
+        assert deleted.status_code == 204
+        assert client.get("/api/v1/conversations").json()["items"] == []
+        assert client.get("/api/v1/todos").json() == []
+        reset_profile = client.get("/api/v1/profile").json()
+        assert reset_profile["confirmed"] == []
+        assert reset_profile["suggestions"] == []
+        assert reset_profile["onboarding_completed"] is False
+        assert client.get(f"/api/v1/conversations/{conversation_id}").status_code == 404
+        assert client.get(f"/api/v1/answers/{answer_id}").status_code == 404
+
+    with sqlite3.connect(database_path) as database:
+        assert database.execute(
+            "SELECT count(*) FROM conversations WHERE id = ?", (conversation_id,)
+        ).fetchone() == (0,)
+        assert database.execute(
+            "SELECT count(*) FROM agent_tasks WHERE id = ?", (task_id,)
+        ).fetchone() == (0,)
+        assert database.execute(
+            "SELECT count(*) FROM answers WHERE id = ?", (answer_id,)
+        ).fetchone() == (0,)
+        assert database.execute("SELECT count(*) FROM answer_feedback").fetchone() == (0,)
+
+
+def test_single_conversation_deletion_cascades_completed_answer(tmp_path) -> None:
+    database_path = tmp_path / "stage6.db"
+    with TestClient(create_app(_settings(tmp_path))) as client:
+        client.get("/api/v1/auth/me")
+        conversation_id, task_id, answer_id = _complete_answer(
+            client,
+            "删除单个会话前先生成一条完整回答。",
+        )
+
+        deleted = client.delete(
+            f"/api/v1/conversations/{conversation_id}",
+            headers=_csrf(client),
+        )
+
+        assert deleted.status_code == 204
+        assert client.get("/api/v1/conversations").json()["items"] == []
+
+    with sqlite3.connect(database_path) as database:
+        assert database.execute(
+            "SELECT count(*) FROM agent_tasks WHERE id = ?", (task_id,)
+        ).fetchone() == (0,)
+        assert database.execute(
+            "SELECT count(*) FROM answers WHERE id = ?", (answer_id,)
+        ).fetchone() == (0,)
+
+
+def test_visitor_data_deletion_cascades_completed_answer(tmp_path) -> None:
+    database_path = tmp_path / "stage6.db"
+    with TestClient(create_app(_settings(tmp_path))) as client:
+        client.get("/api/v1/auth/me")
+        conversation_id, task_id, answer_id = _complete_answer(
+            client,
+            "删除匿名访客数据前先生成一条完整回答。",
+        )
+
+        deleted = client.delete(
+            "/api/v1/identity/visitor-data",
+            headers=_csrf(client),
+        )
+
+        assert deleted.status_code == 204
+        assert client.get("/api/v1/auth/me").status_code == 200
+        assert client.get("/api/v1/conversations").json()["items"] == []
+
+    with sqlite3.connect(database_path) as database:
+        assert database.execute(
+            "SELECT count(*) FROM conversations WHERE id = ?", (conversation_id,)
+        ).fetchone() == (0,)
+        assert database.execute(
+            "SELECT count(*) FROM agent_tasks WHERE id = ?", (task_id,)
+        ).fetchone() == (0,)
+        assert database.execute(
+            "SELECT count(*) FROM answers WHERE id = ?", (answer_id,)
+        ).fetchone() == (0,)
 
 
 def test_pilot_backup_and_restore_round_trip_preserves_sqlite_state(tmp_path) -> None:

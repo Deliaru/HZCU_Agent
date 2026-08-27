@@ -266,10 +266,14 @@ async def delete_conversation(
             )
         ).all()
     )
+    running_tasks: list[asyncio.Task[object]] = []
     for task_id in task_ids:
         running = request.app.state.background_tasks.get(task_id)
-        if running is not None:
+        if running is not None and not running.done():
             running.cancel()
+            running_tasks.append(running)
+    if running_tasks:
+        await asyncio.gather(*running_tasks, return_exceptions=True)
     await session.delete(conversation)
     await session.commit()
 

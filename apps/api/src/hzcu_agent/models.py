@@ -243,7 +243,11 @@ class AnswerRecord(Base):
     __tablename__ = "answers"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    task_id: Mapped[str] = mapped_column(ForeignKey("agent_tasks.id"), unique=True, index=True)
+    task_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_tasks.id", ondelete="CASCADE"),
+        unique=True,
+        index=True,
+    )
     headline: Mapped[str] = mapped_column(String(240))
     answer_markdown: Mapped[str] = mapped_column(Text)
     assumptions: Mapped[list[str]] = mapped_column(JSON, default=list)

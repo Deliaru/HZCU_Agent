@@ -1511,13 +1511,30 @@ export function CampusAgent() {
         onProfile={setProfile}
         onTodosChanged={refreshTodos}
         onPersonalDataDeleted={() => {
+          eventSourceRef.current?.close();
+          if (recoveryTimerRef.current) clearTimeout(recoveryTimerRef.current);
           setProfile(null);
           setTodos([]);
           setMessages([]);
           setConversationId(undefined);
           setConversations([]);
-          void getProfile().then(setProfile);
+          setLiveEvidence([]);
+          setActiveEvidence(null);
+          setPlan(null);
+          setTraceActivities([]);
+          setCurrentTaskId(undefined);
+          setFailedTaskId(undefined);
+          setFeedbackState({});
+          workStartedAtRef.current = null;
+          setWaitSeconds(0);
+          setError(null);
+          setStage("idle");
+          setStatusText("个人数据已删除，当前为全新工作区");
+          void getProfile().then(setProfile).catch(() => {
+            setError("个人数据已删除，但初始化新画像失败，请刷新页面。");
+          });
         }}
+        onError={setError}
       />
     </AppChrome>
   );

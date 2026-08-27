@@ -164,6 +164,7 @@ type SpaceProps = {
   onProfile: (profile: StudentProfile) => void;
   onTodosChanged: () => Promise<void>;
   onPersonalDataDeleted: () => void;
+  onError: (message: string) => void;
 };
 
 export function MySpacePanel({
@@ -174,6 +175,7 @@ export function MySpacePanel({
   onProfile,
   onTodosChanged,
   onPersonalDataDeleted,
+  onError,
 }: SpaceProps) {
   const [tab, setTab] = useState<"profile" | "todos" | "data">("profile");
   const [values, setValues] = useState<Record<string, string>>({});
@@ -240,9 +242,16 @@ export function MySpacePanel({
     ) {
       return;
     }
-    await deletePersonalData();
-    onPersonalDataDeleted();
-    onClose();
+    setBusy(true);
+    try {
+      await deletePersonalData();
+      onPersonalDataDeleted();
+      onClose();
+    } catch (cause) {
+      onError(cause instanceof Error ? cause.message : "个人数据删除失败，请稍后重试。");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -452,8 +461,12 @@ export function MySpacePanel({
                 此操作会删除当前主体的会话、画像、待办和反馈。校园登录本身不会被删除，
                 但产品会回到全新状态。
               </p>
-              <button type="button" onClick={() => void destroyPersonalData()}>
-                <Trash2 size={16} /> 删除全部个人数据
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void destroyPersonalData()}
+              >
+                <Trash2 size={16} /> {busy ? "正在删除…" : "删除全部个人数据"}
               </button>
             </div>
           )}
