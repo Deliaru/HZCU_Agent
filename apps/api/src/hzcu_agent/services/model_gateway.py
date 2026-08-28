@@ -3,6 +3,7 @@ import hashlib
 import json
 import logging
 import re
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Any, Protocol
 
@@ -41,6 +42,7 @@ from hzcu_agent.schemas import (
     ToolError,
     VerificationFinding,
 )
+from hzcu_agent.services.agent_policy import AgentPolicyService
 from hzcu_agent.services.model_runtime import (
     ModelEndpointConfig,
     model_config_from_settings,
@@ -425,7 +427,12 @@ class DemoModelGateway:
 class OpenAIModelGateway:
     provider = "openai"
 
-    def __init__(self, settings: Settings | ModelEndpointConfig) -> None:
+    def __init__(
+        self,
+        settings: Settings | ModelEndpointConfig,
+        *,
+        call_gate: AgentPolicyService | None = None,
+    ) -> None:
         config = (
             model_config_from_settings(settings) if isinstance(settings, Settings) else settings
         )
@@ -445,6 +452,16 @@ class OpenAIModelGateway:
             client_options["base_url"] = config.base_url
         self._client = AsyncOpenAI(**client_options)
         self._streaming_available: bool | None = None
+        self._call_gate = call_gate
+
+    async def _model_call(
+        self,
+        role: str,
+        operation: Callable[[], Awaitable[Any]],
+    ) -> Any:
+        if self._call_gate is None:
+            return await operation()
+        return await self._call_gate.model_call(role, operation)
 
     async def prepare(
         self,
@@ -735,22 +752,25 @@ class OpenAIModelGateway:
     async def _send_parse_request(self, *, role: str, request: dict[str, Any]):
         trace = current_performance_trace()
         if trace is None:
-            return await self._client.responses.parse(**request)
+            return await self._model_call(role, lambda: self._client.responses.parse(**request))
         span = trace.start_span("model", role)
         try:
             if self._streaming_available is False:
                 trace.mark_unmeasurable(span)
-                return await self._client.responses.parse(**request)
+                return await self._model_call(role, lambda: self._client.responses.parse(**request))
             try:
-                async with self._client.responses.stream(**request) as stream:
-                    async for event in stream:
-                        event_type = getattr(event, "type", "")
-                        if event_type in {
-                            "response.output_text.delta",
-                            "response.refusal.delta",
-                        }:
-                            trace.mark_first_event(span)
-                    response = await stream.get_final_response()
+                async def stream_request():
+                    async with self._client.responses.stream(**request) as stream:
+                        async for event in stream:
+                            event_type = getattr(event, "type", "")
+                            if event_type in {
+                                "response.output_text.delta",
+                                "response.refusal.delta",
+                            }:
+                                trace.mark_first_event(span)
+                        return await stream.get_final_response()
+
+                response = await self._model_call(role, stream_request)
                 self._streaming_available = True
                 if span.first_event_ns is None:
                     trace.mark_unmeasurable(span)
@@ -770,7 +790,7 @@ class OpenAIModelGateway:
                     exc_info=True,
                 )
                 trace.mark_unmeasurable(span)
-                return await self._client.responses.parse(**request)
+                return await self._model_call(role, lambda: self._client.responses.parse(**request))
         except Exception:
             trace.mark_unmeasurable(span)
             raise
@@ -834,12 +854,18 @@ class OpenAIModelGateway:
         for repair_attempt in (1, 2):
             trace = current_performance_trace()
             if trace is None:
-                response = await self._client.responses.create(**repair_request)
+                response = await self._model_call(
+                    f"{role}.structured_retry",
+                    lambda: self._client.responses.create(**repair_request),
+                )
             else:
                 span = trace.start_span("model", f"{role}.structured_retry")
                 trace.mark_unmeasurable(span)
                 try:
-                    response = await self._client.responses.create(**repair_request)
+                    response = await self._model_call(
+                        f"{role}.structured_retry",
+                        lambda: self._client.responses.create(**repair_request),
+                    )
                 finally:
                     trace.finish_span(span)
 
@@ -893,7 +919,12 @@ class AnthropicModelGateway(OpenAIModelGateway):
 
     provider = "anthropic"
 
-    def __init__(self, config: ModelEndpointConfig) -> None:
+    def __init__(
+        self,
+        config: ModelEndpointConfig,
+        *,
+        call_gate: AgentPolicyService | None = None,
+    ) -> None:
         if config.protocol != "anthropic_messages" or not config.api_key:
             raise ModelConfigurationError("Anthropic Messages 端点必须配置 API 密钥")
         self.agent_model = config.agent_model
@@ -908,6 +939,7 @@ class AnthropicModelGateway(OpenAIModelGateway):
             client_options["base_url"] = config.base_url
         self._client = AsyncAnthropic(**client_options)
         self._structured_output_available: bool | None = None
+        self._call_gate = call_gate
 
     async def _parse(
         self,
@@ -1123,11 +1155,15 @@ class AnthropicModelGateway(OpenAIModelGateway):
     async def _timed_anthropic_call(self, role: str, request):
         trace = current_performance_trace()
         if trace is None:
-            return await request()
+            if self._call_gate is None:
+                return await request()
+            return await self._call_gate.model_call(role, request)
         span = trace.start_span("model", role)
         trace.mark_unmeasurable(span)
         try:
-            return await request()
+            if self._call_gate is None:
+                return await request()
+            return await self._call_gate.model_call(role, request)
         finally:
             trace.finish_span(span)
 
@@ -1138,9 +1174,15 @@ class AnthropicModelGateway(OpenAIModelGateway):
 class ManagedModelGateway:
     """Atomically swaps the server gateway while letting in-flight calls finish."""
 
-    def __init__(self, config: ModelEndpointConfig) -> None:
+    def __init__(
+        self,
+        config: ModelEndpointConfig,
+        *,
+        call_gate: AgentPolicyService | None = None,
+    ) -> None:
         self._config = config
-        self._gateway = build_model_gateway_from_config(config)
+        self._call_gate = call_gate
+        self._gateway = build_model_gateway_from_config(config, call_gate=call_gate)
         self._retired: list[ModelGateway] = []
         self._replace_lock = asyncio.Lock()
 
@@ -1157,7 +1199,7 @@ class ManagedModelGateway:
         return self._config
 
     async def replace(self, config: ModelEndpointConfig) -> None:
-        replacement = build_model_gateway_from_config(config)
+        replacement = build_model_gateway_from_config(config, call_gate=self._call_gate)
         async with self._replace_lock:
             self._retired.append(self._gateway)
             self._gateway = replacement
@@ -1194,11 +1236,15 @@ def build_model_gateway(settings: Settings) -> ModelGateway:
     return build_model_gateway_from_config(model_config_from_settings(settings))
 
 
-def build_model_gateway_from_config(config: ModelEndpointConfig) -> ModelGateway:
+def build_model_gateway_from_config(
+    config: ModelEndpointConfig,
+    *,
+    call_gate: AgentPolicyService | None = None,
+) -> ModelGateway:
     if config.protocol == "openai_responses":
-        return OpenAIModelGateway(config)
+        return OpenAIModelGateway(config, call_gate=call_gate)
     if config.protocol == "anthropic_messages":
-        return AnthropicModelGateway(config)
+        return AnthropicModelGateway(config, call_gate=call_gate)
     return DemoModelGateway()
 
 

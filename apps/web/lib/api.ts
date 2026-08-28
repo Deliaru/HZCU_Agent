@@ -132,6 +132,19 @@ export type AuthSession = {
   local_admin_setup_available: boolean;
 };
 
+export type AgentAccess = {
+  mode: "observe" | "enforce" | "paused";
+  turnstile_enabled: boolean;
+  turnstile_site_key: string | null;
+  verification_required: boolean;
+  window_remaining: number | null;
+  daily_remaining: number | null;
+  window_reset_at: string | null;
+  daily_reset_at: string | null;
+  running: number;
+  queued: number;
+};
+
 export type ConversationSummary = {
   conversation_id: string;
   title: string | null;
@@ -260,6 +273,62 @@ export type AdminModelConfigurationUpdate = Omit<
 > & {
   protocol: Exclude<ModelProtocol, "demo">;
   api_key?: string;
+};
+
+export type AdminAgentPolicy = {
+  mode: "observe" | "enforce" | "paused";
+  subject_window_limit: number;
+  subject_window_seconds: number;
+  subject_daily_limit: number;
+  max_running_per_subject: number;
+  max_queued_per_subject: number;
+  global_queue_limit: number;
+  queue_timeout_seconds: number;
+  agent_concurrency: number;
+  model_concurrency: number;
+  global_daily_task_limit: number;
+  global_daily_model_call_limit: number;
+  per_task_model_call_limit: number;
+  max_message_length: number;
+  scope_policy: "balanced" | "strict";
+  timezone: string;
+  turnstile_enabled: boolean;
+  turnstile_site_key: string | null;
+  turnstile_secret_configured: boolean;
+  turnstile_secret_hint: string | null;
+  verification_lease_hours: number;
+  ip_new_subjects_per_hour: number;
+  updated_at: string | null;
+  today_task_count: number;
+  today_model_call_count: number;
+  today_rejection_counts: Record<string, number>;
+  running_count: number;
+  queued_count: number;
+  oldest_queue_wait_seconds: number;
+};
+
+export type AdminAgentPolicyUpdate = {
+  mode: AdminAgentPolicy["mode"];
+  subject_window_limit: number;
+  subject_window_seconds: number;
+  subject_daily_limit: number;
+  max_running_per_subject: number;
+  max_queued_per_subject: number;
+  global_queue_limit: number;
+  queue_timeout_seconds: number;
+  agent_concurrency: number;
+  model_concurrency: number;
+  global_daily_task_limit: number;
+  global_daily_model_call_limit: number;
+  per_task_model_call_limit: number;
+  max_message_length: number;
+  scope_policy: AdminAgentPolicy["scope_policy"];
+  timezone: string;
+  turnstile_enabled: boolean;
+  turnstile_site_key: string | null;
+  turnstile_secret?: string;
+  verification_lease_hours: number;
+  ip_new_subjects_per_hour: number;
 };
 
 export type Feedback = {
@@ -394,6 +463,30 @@ export type SourceAlert = {
   detected_at: string;
 };
 
+export class ApiError extends Error {
+  readonly status: number;
+  readonly code: string | null;
+  readonly details: Record<string, unknown>;
+  readonly retryAfter: number | null;
+
+  constructor(
+    message: string,
+    options: {
+      status: number;
+      code?: string | null;
+      details?: Record<string, unknown>;
+      retryAfter?: number | null;
+    },
+  ) {
+    super(message);
+    this.name = "ApiError";
+    this.status = options.status;
+    this.code = options.code ?? null;
+    this.details = options.details ?? {};
+    this.retryAfter = options.retryAfter ?? null;
+  }
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const method = (init?.method ?? "GET").toUpperCase();
   const csrfToken =
@@ -412,19 +505,30 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     const body = await response.text();
     let message = body || `请求失败（${response.status}）`;
+    let code: string | null = null;
+    let details: Record<string, unknown> = {};
     try {
-      const parsed = JSON.parse(body) as {
-        detail?: string | { message?: string };
+    const parsed = JSON.parse(body) as {
+        detail?: string | { code?: string; message?: string; [key: string]: unknown };
       };
       if (typeof parsed.detail === "string") {
         message = parsed.detail;
-      } else if (parsed.detail?.message) {
-        message = parsed.detail.message;
+      } else if (parsed.detail) {
+        message = parsed.detail.message ?? message;
+        code = typeof parsed.detail.code === "string" ? parsed.detail.code : null;
+        details = parsed.detail;
       }
     } catch {
       // Keep the plain response body when the endpoint did not return JSON.
     }
-    throw new Error(message);
+    const retryAfterValue = response.headers.get("Retry-After");
+    const retryAfter = retryAfterValue ? Number.parseInt(retryAfterValue, 10) : null;
+    throw new ApiError(message, {
+      status: response.status,
+      code,
+      details,
+      retryAfter: Number.isFinite(retryAfter) ? retryAfter : null,
+    });
   }
   if (response.status === 204) {
     return undefined as T;
@@ -449,6 +553,17 @@ export async function getHealth(): Promise<Health> {
 
 export async function getAuthSession(): Promise<AuthSession> {
   return apiFetch<AuthSession>("/auth/me", { cache: "no-store" });
+}
+
+export async function getAgentAccess(): Promise<AgentAccess> {
+  return apiFetch<AgentAccess>("/agent/access", { cache: "no-store" });
+}
+
+export async function verifyAgent(token: string): Promise<{ verified_until: string }> {
+  return apiFetch<{ verified_until: string }>("/agent/verification", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  });
 }
 
 export async function logoutCampusSession(): Promise<void> {
@@ -742,6 +857,19 @@ export async function getAdminOverview(): Promise<AdminOverview> {
 
 export async function getAdminModelConfiguration(): Promise<AdminModelConfiguration> {
   return apiFetch("/admin/model-config", { cache: "no-store" });
+}
+
+export async function getAdminAgentPolicy(): Promise<AdminAgentPolicy> {
+  return apiFetch("/admin/agent-policy", { cache: "no-store" });
+}
+
+export async function updateAdminAgentPolicy(
+  payload: AdminAgentPolicyUpdate,
+): Promise<AdminAgentPolicy> {
+  return apiFetch("/admin/agent-policy", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function updateAdminModelConfiguration(

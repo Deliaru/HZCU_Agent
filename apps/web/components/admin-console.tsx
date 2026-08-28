@@ -22,15 +22,19 @@ import type { FormEvent } from "react";
 
 import {
   getAdminFeedback,
+  getAdminAgentPolicy,
   getAdminConversationTrace,
   getAdminModelConfiguration,
   getAdminOverview,
   getAdminTaskHealth,
   getAuthSession,
   getSourceAlerts,
+  updateAdminAgentPolicy,
   updateAdminModelConfiguration,
 } from "@/lib/api";
 import type {
+  AdminAgentPolicy,
+  AdminAgentPolicyUpdate,
   AdminModelConfiguration,
   AdminConversationTrace,
   AdminOverview,
@@ -42,7 +46,7 @@ import type {
 import { AppChrome } from "./app-chrome";
 
 type TaskHealth = Awaited<ReturnType<typeof getAdminTaskHealth>>["items"];
-type AdminView = "model" | "telemetry";
+type AdminView = "model" | "agent" | "telemetry";
 type AccessState = "loading" | "redirecting" | "admin" | "denied" | "failed";
 type ConfigDraft = {
   protocol: "openai_responses" | "anthropic_messages";
@@ -53,6 +57,8 @@ type ConfigDraft = {
   utilityReasoningEffort: ReasoningEffort;
   timeoutSeconds: number;
 };
+
+type AgentPolicyDraft = Omit<AdminAgentPolicyUpdate, "turnstile_secret">;
 
 const EFFORTS: ReasoningEffort[] = [
   "none",
@@ -83,6 +89,31 @@ function draftFrom(config: AdminModelConfiguration): ConfigDraft {
   };
 }
 
+function agentPolicyDraftFrom(policy: AdminAgentPolicy): AgentPolicyDraft {
+  return {
+    mode: policy.mode,
+    subject_window_limit: policy.subject_window_limit,
+    subject_window_seconds: policy.subject_window_seconds,
+    subject_daily_limit: policy.subject_daily_limit,
+    max_running_per_subject: policy.max_running_per_subject,
+    max_queued_per_subject: policy.max_queued_per_subject,
+    global_queue_limit: policy.global_queue_limit,
+    queue_timeout_seconds: policy.queue_timeout_seconds,
+    agent_concurrency: policy.agent_concurrency,
+    model_concurrency: policy.model_concurrency,
+    global_daily_task_limit: policy.global_daily_task_limit,
+    global_daily_model_call_limit: policy.global_daily_model_call_limit,
+    per_task_model_call_limit: policy.per_task_model_call_limit,
+    max_message_length: policy.max_message_length,
+    scope_policy: policy.scope_policy,
+    timezone: policy.timezone,
+    turnstile_enabled: policy.turnstile_enabled,
+    turnstile_site_key: policy.turnstile_site_key,
+    verification_lease_hours: policy.verification_lease_hours,
+    ip_new_subjects_per_hour: policy.ip_new_subjects_per_hour,
+  };
+}
+
 export function AdminConsole() {
   const [access, setAccess] = useState<AccessState>("loading");
   const [view, setView] = useState<AdminView>("model");
@@ -93,8 +124,12 @@ export function AdminConsole() {
   const [configuration, setConfiguration] =
     useState<AdminModelConfiguration | null>(null);
   const [draft, setDraft] = useState<ConfigDraft | null>(null);
+  const [agentPolicy, setAgentPolicy] = useState<AdminAgentPolicy | null>(null);
+  const [agentPolicyDraft, setAgentPolicyDraft] = useState<AgentPolicyDraft | null>(null);
+  const [turnstileSecret, setTurnstileSecret] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [saving, setSaving] = useState(false);
+  const [savingAgentPolicy, setSavingAgentPolicy] = useState(false);
   const [notice, setNotice] = useState<string>();
   const [error, setError] = useState<string>();
 
@@ -113,9 +148,10 @@ export function AdminConsole() {
           setAccess("denied");
           return;
         }
-        const [config, nextOverview, nextTasks, nextFeedback, nextAlerts] =
+        const [config, nextPolicy, nextOverview, nextTasks, nextFeedback, nextAlerts] =
           await Promise.all([
             getAdminModelConfiguration(),
+            getAdminAgentPolicy(),
             getAdminOverview(),
             getAdminTaskHealth(),
             getAdminFeedback(),
@@ -124,6 +160,8 @@ export function AdminConsole() {
         if (cancelled) return;
         setConfiguration(config);
         setDraft(draftFrom(config));
+        setAgentPolicy(nextPolicy);
+        setAgentPolicyDraft(agentPolicyDraftFrom(nextPolicy));
         setOverview(nextOverview);
         setTasks(nextTasks.items);
         setFeedback(nextFeedback);
@@ -169,11 +207,33 @@ export function AdminConsole() {
     }
   }
 
+  async function saveAgentPolicy(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!agentPolicyDraft || savingAgentPolicy) return;
+    setSavingAgentPolicy(true);
+    setError(undefined);
+    setNotice(undefined);
+    try {
+      const saved = await updateAdminAgentPolicy({
+        ...agentPolicyDraft,
+        ...(turnstileSecret.trim() ? { turnstile_secret: turnstileSecret.trim() } : {}),
+      });
+      setAgentPolicy(saved);
+      setAgentPolicyDraft(agentPolicyDraftFrom(saved));
+      setTurnstileSecret("");
+      setNotice("Agent 策略已保存：新准入立即生效；运行中任务不取消。 ");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Agent 策略保存失败");
+    } finally {
+      setSavingAgentPolicy(false);
+    }
+  }
+
   if (access === "loading" || access === "redirecting") {
     return (
       <main className="admin-entry-loading">
         <LoaderCircle size={24} />
-        <span>{access === "redirecting" ? "正在进入校园 CA 登录" : "正在校验管理员身份"}</span>
+        <span>{access === "redirecting" ? "正在进入管理员登录" : "正在校验管理员身份"}</span>
       </main>
     );
   }
@@ -184,7 +244,7 @@ export function AdminConsole() {
         section="admin"
         className="admin-shell admin-shell-denied"
         channel="HZCU // SERVER CONTROL"
-        mode="CA ADMIN / ROLE CONTROL"
+        mode="SERVER ADMIN / ROLE CONTROL"
         eyebrow="03 / ADMIN CONSOLE"
         title="访问校验"
         utilities={
@@ -196,14 +256,14 @@ export function AdminConsole() {
         <section className="admin-denied">
           <span className="admin-denied-code">403 / ROLE GATE</span>
           <ShieldCheck size={32} />
-          <h1>{access === "failed" ? "管理服务暂时无法连接" : "当前 CA 身份不是管理员"}</h1>
+          <h1>{access === "failed" ? "管理服务暂时无法连接" : "当前身份不是管理员"}</h1>
           <p>
             {access === "failed"
               ? error
-              : "管理后台只对服务器管理员名单中的校园 CA 身份开放。"}
+              : "管理后台只对已配置的服务器管理员身份开放。"}
           </p>
           <a href="/login?return_to=/admin">
-            {access === "failed" ? "重新进入管理后台" : "更换校园 CA 身份"}
+            {access === "failed" ? "重新进入管理后台" : "更换管理员身份"}
           </a>
         </section>
       </AppChrome>
@@ -215,7 +275,7 @@ export function AdminConsole() {
       section="admin"
       className="admin-shell"
       channel="HZCU // SERVER CONTROL"
-      mode="CA ADMIN / SYSTEM CONFIG"
+      mode="SERVER ADMIN / SYSTEM CONFIG"
       eyebrow="03 / ADMIN CONSOLE"
       title="系统管理"
       utilities={
@@ -224,7 +284,7 @@ export function AdminConsole() {
             <ArrowLeft size={14} /> 返回提问
           </a>
           <span className="admin-role-mark">
-            <ShieldCheck size={15} /> CA ADMIN
+            <ShieldCheck size={15} /> SERVER ADMIN
           </span>
         </>
       }
@@ -257,10 +317,17 @@ export function AdminConsole() {
           </button>
           <button
             type="button"
+            className={view === "agent" ? "active" : ""}
+            onClick={() => setView("agent")}
+          >
+            <span>02</span><ShieldCheck size={17} /> Agent 策略
+          </button>
+          <button
+            type="button"
             className={view === "telemetry" ? "active" : ""}
             onClick={() => setView("telemetry")}
           >
-            <span>02</span><Activity size={17} /> 运行监测
+            <span>03</span><Activity size={17} /> 运行监测
           </button>
         </nav>
 
@@ -443,6 +510,19 @@ export function AdminConsole() {
             alerts={alerts}
           />
         ) : null}
+        {view === "agent" && agentPolicy && agentPolicyDraft ? (
+          <AgentPolicyPanel
+            policy={agentPolicy}
+            draft={agentPolicyDraft}
+            secret={turnstileSecret}
+            saving={savingAgentPolicy}
+            notice={notice}
+            error={error}
+            onDraftChange={setAgentPolicyDraft}
+            onSecretChange={setTurnstileSecret}
+            onSubmit={saveAgentPolicy}
+          />
+        ) : null}
       </section>
     </AppChrome>
   );
@@ -488,6 +568,187 @@ function TelemetryPanel({
         <header><CircleAlert size={17} /><div><p className="eyebrow">SOURCE WATCH</p><h2>来源告警</h2></div></header>
         {alerts.length ? alerts.map((alert) => <article key={`${alert.source_id}-${alert.code}`}><i>{alert.severity}</i><span><b>{alert.source_name}</b><small>{alert.message}</small></span></article>) : <p>当前没有来源告警。</p>}
       </section>
+    </section>
+  );
+}
+
+function AgentPolicyPanel({
+  policy,
+  draft,
+  secret,
+  saving,
+  notice,
+  error,
+  onDraftChange,
+  onSecretChange,
+  onSubmit,
+}: {
+  policy: AdminAgentPolicy;
+  draft: AgentPolicyDraft;
+  secret: string;
+  saving: boolean;
+  notice?: string;
+  error?: string;
+  onDraftChange: (draft: AgentPolicyDraft) => void;
+  onSecretChange: (secret: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  const setNumber = (key: keyof AgentPolicyDraft, value: string) => {
+    onDraftChange({ ...draft, [key]: Number(value) } as AgentPolicyDraft);
+  };
+
+  return (
+    <section className="agent-policy-workspace">
+      <aside className="agent-policy-status">
+        <span className="model-config-kicker">AGENT ADMISSION / LIVE POLICY</span>
+        <b>{draft.mode.toUpperCase()}</b>
+        <dl>
+          <div><dt>今日任务</dt><dd>{policy.today_task_count} / {policy.global_daily_task_limit}</dd></div>
+          <div><dt>今日模型调用</dt><dd>{policy.today_model_call_count} / {policy.global_daily_model_call_limit}</dd></div>
+          <div><dt>今日拒绝</dt><dd>{Object.entries(policy.today_rejection_counts).length ? Object.entries(policy.today_rejection_counts).map(([code, count]) => `${code} ${count}`).join(" · ") : "—"}</dd></div>
+          <div><dt>运行 / 排队</dt><dd>{policy.running_count} / {policy.queued_count}</dd></div>
+          <div><dt>最长等待</dt><dd>{policy.oldest_queue_wait_seconds ? `${policy.oldest_queue_wait_seconds}s` : "—"}</dd></div>
+          <div><dt>Turnstile</dt><dd>{policy.turnstile_secret_configured ? `已配置 ${policy.turnstile_secret_hint ?? ""}` : "未配置"}</dd></div>
+        </dl>
+        <p><i /> 保存后新准入立即使用新策略；已经运行的任务不会被取消。</p>
+      </aside>
+
+      <form className="model-config-form agent-policy-form" onSubmit={onSubmit}>
+        <header>
+          <div>
+            <p className="eyebrow">PUBLIC AGENT SAFETY GATE</p>
+            <h2>匿名试用与用途保护</h2>
+          </div>
+          <span>DB / HOT RELOAD</span>
+        </header>
+
+        <fieldset className="protocol-selector agent-policy-modes">
+          <legend>公众状态</legend>
+          {([
+            ["observe", "观察", "记录命中与额度，不拒绝公众任务"],
+            ["enforce", "执行", "启用额度、队列、人机验证和用途限制"],
+            ["paused", "暂停", "暂停公众新任务，管理员仍可测试"],
+          ] as const).map(([value, label, description]) => (
+            <label className={draft.mode === value ? "active" : ""} key={value}>
+              <input
+                type="radio"
+                name="agent-policy-mode"
+                value={value}
+                checked={draft.mode === value}
+                onChange={() => onDraftChange({ ...draft, mode: value })}
+              />
+              <ShieldCheck size={18} />
+              <span><b>{label}</b><small>{description}</small></span>
+              <i>{value === "observe" ? "O" : value === "enforce" ? "E" : "P"}</i>
+            </label>
+          ))}
+        </fieldset>
+
+        <div className="agent-policy-grid">
+          <div className="config-field">
+            <label htmlFor="agent-window-limit">匿名窗口次数</label>
+            <input id="agent-window-limit" type="number" min={1} max={100} value={draft.subject_window_limit} onChange={(event) => setNumber("subject_window_limit", event.target.value)} />
+          </div>
+          <div className="config-field">
+            <label htmlFor="agent-window-seconds">窗口时长（秒）</label>
+            <input id="agent-window-seconds" type="number" min={1} max={86400} value={draft.subject_window_seconds} onChange={(event) => setNumber("subject_window_seconds", event.target.value)} />
+          </div>
+          <div className="config-field">
+            <label htmlFor="agent-daily-limit">匿名每日次数</label>
+            <input id="agent-daily-limit" type="number" min={1} max={1000} value={draft.subject_daily_limit} onChange={(event) => setNumber("subject_daily_limit", event.target.value)} />
+          </div>
+          <div className="config-field">
+            <label htmlFor="agent-max-queued">单主体排队上限</label>
+            <input id="agent-max-queued" type="number" min={0} max={8} value={draft.max_queued_per_subject} onChange={(event) => setNumber("max_queued_per_subject", event.target.value)} />
+          </div>
+          <div className="config-field">
+            <label htmlFor="agent-max-running">单主体运行上限</label>
+            <input id="agent-max-running" type="number" min={1} max={4} value={draft.max_running_per_subject} onChange={(event) => setNumber("max_running_per_subject", event.target.value)} />
+          </div>
+          <div className="config-field">
+            <label htmlFor="agent-queue-limit">全局队列上限</label>
+            <input id="agent-queue-limit" type="number" min={1} max={10000} value={draft.global_queue_limit} onChange={(event) => setNumber("global_queue_limit", event.target.value)} />
+          </div>
+          <div className="config-field">
+            <label htmlFor="agent-queue-timeout">排队超时（秒）</label>
+            <input id="agent-queue-timeout" type="number" min={1} max={86400} value={draft.queue_timeout_seconds} onChange={(event) => setNumber("queue_timeout_seconds", event.target.value)} />
+          </div>
+          <div className="config-field">
+            <label htmlFor="agent-concurrency">Agent 并发</label>
+            <input id="agent-concurrency" type="number" min={1} max={64} value={draft.agent_concurrency} onChange={(event) => setNumber("agent_concurrency", event.target.value)} />
+          </div>
+          <div className="config-field">
+            <label htmlFor="model-concurrency">模型调用并发</label>
+            <input id="model-concurrency" type="number" min={1} max={64} value={draft.model_concurrency} onChange={(event) => setNumber("model_concurrency", event.target.value)} />
+          </div>
+          <div className="config-field">
+            <label htmlFor="agent-daily-budget">全局每日任务</label>
+            <input id="agent-daily-budget" type="number" min={1} max={100000} value={draft.global_daily_task_limit} onChange={(event) => setNumber("global_daily_task_limit", event.target.value)} />
+          </div>
+          <div className="config-field">
+            <label htmlFor="model-daily-budget">全局每日模型调用</label>
+            <input id="model-daily-budget" type="number" min={1} max={1000000} value={draft.global_daily_model_call_limit} onChange={(event) => setNumber("global_daily_model_call_limit", event.target.value)} />
+          </div>
+          <div className="config-field">
+            <label htmlFor="task-call-limit">单任务模型调用</label>
+            <input id="task-call-limit" type="number" min={1} max={100} value={draft.per_task_model_call_limit} onChange={(event) => setNumber("per_task_model_call_limit", event.target.value)} />
+          </div>
+          <div className="config-field">
+            <label htmlFor="message-length">问题长度（字）</label>
+            <input id="message-length" type="number" min={1} max={20000} value={draft.max_message_length} onChange={(event) => setNumber("max_message_length", event.target.value)} />
+          </div>
+        </div>
+
+        <div className="agent-policy-options">
+          <div className="config-field">
+            <label htmlFor="scope-policy">用途策略</label>
+            <select id="scope-policy" value={draft.scope_policy} onChange={(event) => onDraftChange({ ...draft, scope_policy: event.target.value as AgentPolicyDraft["scope_policy"] })}>
+              <option value="balanced">平衡校园限定</option>
+              <option value="strict">严格校园限定</option>
+            </select>
+          </div>
+          <div className="config-field">
+            <label htmlFor="policy-timezone">日界线时区</label>
+            <input id="policy-timezone" value={draft.timezone} onChange={(event) => onDraftChange({ ...draft, timezone: event.target.value })} />
+          </div>
+        </div>
+
+        <fieldset className="agent-policy-turnstile">
+          <legend>Turnstile 人机验证</legend>
+          <label className="agent-policy-check">
+            <input type="checkbox" checked={draft.turnstile_enabled} onChange={(event) => onDraftChange({ ...draft, turnstile_enabled: event.target.checked })} />
+            <span><b>启用验证租约</b><small>仅在 enforce 模式对匿名主体要求验证</small></span>
+          </label>
+          <div className="agent-policy-options">
+            <div className="config-field">
+              <label htmlFor="turnstile-site-key">Sitekey</label>
+              <input id="turnstile-site-key" value={draft.turnstile_site_key ?? ""} onChange={(event) => onDraftChange({ ...draft, turnstile_site_key: event.target.value.trim() || null })} spellCheck={false} />
+            </div>
+            <div className="config-field">
+              <label htmlFor="turnstile-secret">Secret（只写入，不回显）</label>
+              <input id="turnstile-secret" type="password" value={secret} onChange={(event) => onSecretChange(event.target.value)} placeholder={policy.turnstile_secret_configured ? `留空保留当前密钥 ${policy.turnstile_secret_hint ?? ""}` : "配置后才能切换 enforce"} autoComplete="new-password" spellCheck={false} />
+            </div>
+            <div className="config-field">
+              <label htmlFor="verification-lease">验证租约（小时）</label>
+              <input id="verification-lease" type="number" min={1} max={168} value={draft.verification_lease_hours} onChange={(event) => setNumber("verification_lease_hours", event.target.value)} />
+            </div>
+            <div className="config-field">
+              <label htmlFor="ip-new-subjects">同出口新主体 / 小时</label>
+              <input id="ip-new-subjects" type="number" min={1} max={10000} value={draft.ip_new_subjects_per_hour} onChange={(event) => setNumber("ip_new_subjects_per_hour", event.target.value)} />
+            </div>
+          </div>
+        </fieldset>
+
+        {error ? <div className="config-save-message error" role="alert">{error}</div> : null}
+        {notice ? <div className="config-save-message success"><Check size={14} />{notice}</div> : null}
+        <footer className="config-form-actions">
+          <span>NEW ADMISSION / HOT RELOAD</span>
+          <button type="submit" disabled={saving}>
+            {saving ? <LoaderCircle size={16} /> : <Save size={16} />}
+            {saving ? "正在应用策略" : "保存并应用策略"}
+          </button>
+        </footer>
+      </form>
     </section>
   );
 }

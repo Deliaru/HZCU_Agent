@@ -52,6 +52,7 @@ from hzcu_agent.schemas import (
     TaskResponse,
     VerificationFinding,
 )
+from hzcu_agent.services.agent_admission import AgentAdmissionError, admission_http_exception
 from hzcu_agent.text_safety import clean_product_json, clean_product_text
 
 router = APIRouter(tags=["agent"])
@@ -324,56 +325,88 @@ async def send_message(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Message must contain visible text",
         )
+    max_message_length = request.app.state.policy.snapshot().max_message_length
+    if len(message_text) > max_message_length:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "MESSAGE_TOO_LONG",
+                "message": f"单次提问最多 {max_message_length} 个字符。",
+            },
+        )
+    # Close the read transaction opened while checking the conversation before
+    # waiting on the process-wide admission lease.  This prevents a queued
+    # request from holding a SQLite shared lock while another request commits
+    # its reservation and task in the same controlled transaction.
+    await session.commit()
     now = utc_now()
-    message = Message(
-        id=new_id("msg"),
-        conversation_id=conversation_id,
-        role="user",
-        content=message_text,
-        client_message_id=client_message_id,
-        created_at=now,
-    )
-    task = AgentTask(
-        id=new_id("task"),
-        conversation_id=conversation_id,
-        user_message_id=message.id,
-        status="queued",
-        access_scopes=sorted(principal.visibility_scopes),
-        request_mode="normal",
-        requested_by_subject_id=principal.product_subject_id,
-        created_at=now,
-        updated_at=now,
-    )
-    if not conversation.title:
-        conversation.title = message_text[:60]
-    conversation.updated_at = now
-    session.add(message)
+    task_id = new_id("task")
+    admission = None
     try:
-        await session.flush()
-        session.add(task)
-        await session.commit()
-    except IntegrityError:
-        # The database uniqueness constraint is the final idempotency gate.
-        # Two browser retries may pass the optimistic lookup concurrently; the
-        # loser resolves the already-created task instead of surfacing a 500.
-        await session.rollback()
-        if client_message_id:
-            prior_message = await session.scalar(
-                select(Message).where(
-                    Message.conversation_id == conversation_id,
-                    Message.client_message_id == client_message_id,
-                )
+        try:
+            admission = await request.app.state.admission.admit(
+                session,
+                request=request,
+                principal=principal,
+                task_id=task_id,
+                request_kind="normal",
+                hold_lease=True,
             )
-            prior_task = (
-                await session.scalar(
-                    select(AgentTask).where(AgentTask.user_message_id == prior_message.id)
+        except AgentAdmissionError as exc:
+            raise admission_http_exception(exc) from exc
+        message = Message(
+            id=new_id("msg"),
+            conversation_id=conversation_id,
+            role="user",
+            content=message_text,
+            client_message_id=client_message_id,
+            created_at=now,
+        )
+        task = AgentTask(
+            id=task_id,
+            conversation_id=conversation_id,
+            user_message_id=message.id,
+            status="queued",
+            access_scopes=sorted(principal.visibility_scopes),
+            request_mode="normal",
+            requested_by_subject_id=principal.product_subject_id,
+            queue_deadline_at=admission.queue_deadline_at,
+            created_at=now,
+            updated_at=now,
+        )
+        if not conversation.title:
+            conversation.title = message_text[:60]
+        conversation.updated_at = now
+        session.add(message)
+        try:
+            await session.flush()
+            session.add(task)
+            await session.commit()
+        except IntegrityError:
+            # The database uniqueness constraint is the final idempotency gate.
+            # Two browser retries may pass the optimistic lookup concurrently; the
+            # loser resolves the already-created task instead of surfacing a 500.
+            await session.rollback()
+            if client_message_id:
+                prior_message = await session.scalar(
+                    select(Message).where(
+                        Message.conversation_id == conversation_id,
+                        Message.client_message_id == client_message_id,
+                    )
                 )
-                if prior_message is not None
-                else None
-            )
-            if prior_task is not None:
-                return await _accepted_task_response(request, session, prior_task)
-        raise
+                prior_task = (
+                    await session.scalar(
+                        select(AgentTask).where(AgentTask.user_message_id == prior_message.id)
+                    )
+                    if prior_message is not None
+                    else None
+                )
+                if prior_task is not None:
+                    return await _accepted_task_response(request, session, prior_task)
+            raise
+    finally:
+        if admission is not None:
+            await admission.release()
     await _launch_task(request, task)
     return await _accepted_task_response(request, session, task)
 
@@ -484,9 +517,27 @@ async def retry_task(
         raise HTTPException(status_code=404, detail="Task not found")
     if parent.status not in {"failed", "canceled", "completed"}:
         raise HTTPException(status_code=409, detail="Task is still active")
-    task = _derived_task(parent, principal, mode="retry")
-    session.add(task)
     await session.commit()
+    task = _derived_task(parent, principal, mode="retry")
+    admission = None
+    try:
+        try:
+            admission = await request.app.state.admission.admit(
+                session,
+                request=request,
+                principal=principal,
+                task_id=task.id,
+                request_kind="retry",
+                hold_lease=True,
+            )
+        except AgentAdmissionError as exc:
+            raise admission_http_exception(exc) from exc
+        task.queue_deadline_at = admission.queue_deadline_at
+        session.add(task)
+        await session.commit()
+    finally:
+        if admission is not None:
+            await admission.release()
     await _launch_task(request, task)
     return await _accepted_task_response(request, session, task)
 
@@ -507,9 +558,27 @@ async def reverify_answer(
     parent = await session.get(AgentTask, answer.task_id) if answer is not None else None
     if parent is None or not await _can_access_task(session, parent, principal):
         raise HTTPException(status_code=404, detail="Answer not found")
-    task = _derived_task(parent, principal, mode="live_reverify")
-    session.add(task)
     await session.commit()
+    task = _derived_task(parent, principal, mode="live_reverify")
+    admission = None
+    try:
+        try:
+            admission = await request.app.state.admission.admit(
+                session,
+                request=request,
+                principal=principal,
+                task_id=task.id,
+                request_kind="live_reverify",
+                hold_lease=True,
+            )
+        except AgentAdmissionError as exc:
+            raise admission_http_exception(exc) from exc
+        task.queue_deadline_at = admission.queue_deadline_at
+        session.add(task)
+        await session.commit()
+    finally:
+        if admission is not None:
+            await admission.release()
     await _launch_task(request, task)
     return await _accepted_task_response(request, session, task)
 
@@ -720,6 +789,10 @@ async def get_answer(
 
 
 async def _launch_task(request: Request, task: AgentTask) -> None:
+    scheduler = getattr(request.app.state, "scheduler", None)
+    if scheduler is not None:
+        await scheduler.enqueue(task.id)
+        return
     broker = request.app.state.broker
     await broker.ensure(task.id)
     async with request.app.state.database.session_factory() as session:
@@ -763,8 +836,7 @@ async def _queue_position(session: AsyncSession, task: AgentTask) -> int:
         return 0
     earlier = await session.scalar(
         select(func.count(AgentTask.id)).where(
-            AgentTask.requested_by_subject_id == task.requested_by_subject_id,
-            AgentTask.status.in_(("queued", "running")),
+            AgentTask.status == "queued",
             or_(
                 AgentTask.created_at < task.created_at,
                 and_(

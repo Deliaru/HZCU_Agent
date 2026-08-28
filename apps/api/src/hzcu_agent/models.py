@@ -119,6 +119,102 @@ class RuntimeModelConfiguration(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
+class AgentRuntimePolicy(Base):
+    """Singleton policy that bounds public Agent work at the application edge.
+
+    This is intentionally separate from the model endpoint configuration.  It
+    never contains provider credentials or changes how the CPA/number pool is
+    routed; it only controls admission, scheduling and calls made by this
+    Agent process.
+    """
+
+    __tablename__ = "agent_runtime_policies"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default="primary")
+    mode: Mapped[str] = mapped_column(String(16), default="observe")
+    subject_window_limit: Mapped[int] = mapped_column(Integer, default=5)
+    subject_window_seconds: Mapped[int] = mapped_column(Integer, default=1800)
+    subject_daily_limit: Mapped[int] = mapped_column(Integer, default=15)
+    max_running_per_subject: Mapped[int] = mapped_column(Integer, default=1)
+    max_queued_per_subject: Mapped[int] = mapped_column(Integer, default=1)
+    global_queue_limit: Mapped[int] = mapped_column(Integer, default=30)
+    queue_timeout_seconds: Mapped[int] = mapped_column(Integer, default=300)
+    agent_concurrency: Mapped[int] = mapped_column(Integer, default=4)
+    model_concurrency: Mapped[int] = mapped_column(Integer, default=4)
+    global_daily_task_limit: Mapped[int] = mapped_column(Integer, default=300)
+    global_daily_model_call_limit: Mapped[int] = mapped_column(Integer, default=1500)
+    per_task_model_call_limit: Mapped[int] = mapped_column(Integer, default=8)
+    max_message_length: Mapped[int] = mapped_column(Integer, default=1500)
+    scope_policy: Mapped[str] = mapped_column(String(24), default="balanced")
+    timezone: Mapped[str] = mapped_column(String(64), default="Asia/Shanghai")
+    turnstile_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    turnstile_site_key: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    encrypted_turnstile_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
+    turnstile_secret_hint: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    verification_lease_hours: Mapped[int] = mapped_column(Integer, default=24)
+    ip_new_subjects_per_hour: Mapped[int] = mapped_column(Integer, default=60)
+    updated_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("campus_users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class AgentAdmissionEvent(Base):
+    """Short-lived accepted-task events used for exact rolling quotas.
+
+    ``subject_key`` is deliberately not a foreign key.  Deleting personal
+    data must not reset the security window before its natural expiry.
+    """
+
+    __tablename__ = "agent_admission_events"
+    __table_args__ = (
+        UniqueConstraint("task_id", name="uq_agent_admission_event_task"),
+        Index("ix_agent_admission_subject_time", "subject_key", "occurred_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    subject_key: Mapped[str] = mapped_column(String(64), index=True)
+    task_id: Mapped[str] = mapped_column(String(64), index=True)
+    request_kind: Mapped[str] = mapped_column(String(32), default="normal")
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class AgentUsageCounter(Base):
+    """Daily aggregate counters with no user identifier for the global row."""
+
+    __tablename__ = "agent_usage_counters"
+    __table_args__ = (
+        UniqueConstraint("scope_key", "bucket_date", name="uq_agent_usage_scope_bucket"),
+        Index("ix_agent_usage_bucket", "bucket_date"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    scope_key: Mapped[str] = mapped_column(String(96), index=True)
+    bucket_date: Mapped[str] = mapped_column(String(16), index=True)
+    task_count: Mapped[int] = mapped_column(Integer, default=0)
+    model_call_count: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class AgentVerificationEvent(Base):
+    """Short-lived Turnstile/IP anomaly record; raw IP is never stored."""
+
+    __tablename__ = "agent_verification_events"
+    __table_args__ = (
+        Index("ix_agent_verification_ip_time", "ip_hmac", "occurred_at"),
+        Index("ix_agent_verification_subject_time", "subject_key", "occurred_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    ip_hmac: Mapped[str] = mapped_column(String(64), index=True)
+    subject_key: Mapped[str] = mapped_column(String(64), index=True)
+    outcome: Mapped[str] = mapped_column(String(24))
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
 class ProductSubject(Base):
     __tablename__ = "product_subjects"
 
@@ -155,6 +251,7 @@ class VisitorSession(Base):
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    verified_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class Conversation(Base):
@@ -231,6 +328,10 @@ class AgentTask(Base):
         nullable=True,
         index=True,
     )
+    queue_deadline_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    model_call_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, onupdate=utc_now

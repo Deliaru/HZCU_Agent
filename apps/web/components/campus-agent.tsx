@@ -15,6 +15,7 @@ import {
   PanelRightOpen,
   RefreshCw,
   Send,
+  ShieldCheck,
   Sparkles,
   Square,
   ThumbsDown,
@@ -30,6 +31,7 @@ import {
   cancelTask,
   createConversation,
   createTodo,
+  getAgentAccess,
   getAnswer,
   getAuthSession,
   getConversation,
@@ -46,8 +48,11 @@ import {
   reverifyAnswer,
   sendMessage,
   streamUrl,
+  verifyAgent,
+  ApiError,
 } from "@/lib/api";
 import type {
+  AgentAccess,
   AgentAnswer,
   AuthSession,
   ConversationSummary,
@@ -193,6 +198,71 @@ function formatWait(seconds: number): string {
   return `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
 }
 
+function formatResetAt(value: string | null): string {
+  if (!value) return "稍后";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "稍后";
+  return date.toLocaleString("zh-CN", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function describeAgentError(cause: unknown): string {
+  if (!(cause instanceof ApiError)) {
+    return cause instanceof Error ? cause.message : "任务提交失败，请稍后重试。";
+  }
+  if (cause.code === "HUMAN_VERIFICATION_REQUIRED") {
+    return "请先完成一次人机验证，验证成功后会自动继续原问题。";
+  }
+  if (cause.code === "TURNSTILE_NOT_CONFIGURED") {
+    return "人机验证尚未完成服务器配置，请联系管理员。";
+  }
+  if (cause.code === "SUBJECT_RATE_LIMITED") {
+    return `本设备 30 分钟额度已用完，请在 ${formatWait(cause.retryAfter ?? 0)} 后再试。`;
+  }
+  if (cause.code === "SUBJECT_DAILY_LIMITED") {
+    return "本设备今日试用额度已用完，明天再来即可。";
+  }
+  if (cause.code === "SUBJECT_QUEUE_FULL") {
+    return cause.retryAfter && cause.retryAfter > 0
+      ? `本设备已有任务在运行或排队，请等待约 ${formatWait(cause.retryAfter)} 后再试。`
+      : "本设备已有任务在运行或排队，请等待当前任务完成。";
+  }
+  if (cause.code === "GLOBAL_QUEUE_FULL") {
+    return cause.retryAfter && cause.retryAfter > 0
+      ? `公共队列已满，请约 ${formatWait(cause.retryAfter)} 后再试。`
+      : "公共队列已满，请稍后再试。";
+  }
+  if (cause.code === "PUBLIC_AGENT_PAUSED") {
+    return "公众提问暂时暂停，管理员仍可继续测试。";
+  }
+  if (cause.code === "AGENT_DAILY_TASK_BUDGET_EXHAUSTED") {
+    return "今日公共试用额度已用完，请明天再试。";
+  }
+  if (cause.retryAfter && cause.retryAfter > 0) {
+    return `${cause.message}（约 ${formatWait(cause.retryAfter)} 后重试）`;
+  }
+  return cause.message;
+}
+
+function describeTaskFailure(errorCode: string | null | undefined, fallback?: string): string {
+  switch (errorCode) {
+    case "AGENT_MODEL_BUDGET_EXHAUSTED":
+      return "今日 Agent 模型调用额度已用完，请明天再试。";
+    case "QUEUE_TIMEOUT":
+      return "公共队列等待超时，请稍后重新提交。";
+    case "SERVICE_RESTARTED":
+      return "服务重启中断了上次任务，可以重新提交原问题。";
+    case "CANCELED_BY_USER":
+      return "调查已取消。";
+    default:
+      return fallback ?? "本次调查没有完成，可以保留原问题后重试。";
+  }
+}
+
 function useCampusAgentController() {
   const [conversationId, setConversationId] = useState<string>();
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
@@ -208,6 +278,8 @@ function useCampusAgentController() {
   const [traceActivities, setTraceActivities] = useState<TraceActivity[]>([]);
   const [health, setHealth] = useState<Health | null>(null);
   const [authSession, setAuthSession] = useState<AuthSession | null>(null);
+  const [agentAccess, setAgentAccess] = useState<AgentAccess | null>(null);
+  const [verificationQuestion, setVerificationQuestion] = useState<string>();
   const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [todos, setTodos] = useState<UserTodo[]>([]);
   const [currentTaskId, setCurrentTaskId] = useState<string>();
@@ -263,6 +335,12 @@ function useCampusAgentController() {
     setTodos(await getTodos());
   }, []);
 
+  const refreshAgentAccess = useCallback(async () => {
+    const next = await getAgentAccess();
+    setAgentAccess(next);
+    return next;
+  }, []);
+
   const finishTaskWithAnswer = useCallback(
     async (answer: AgentAnswer) => {
       const normalizedAnswer = {
@@ -314,13 +392,13 @@ function useCampusAgentController() {
           setStage("failed");
           workStartedAtRef.current = null;
           setCurrentTaskId(undefined);
-          setFailedTaskId(taskId);
-          setStatusText(
-            task.error_code === "SERVICE_RESTARTED"
-              ? "服务重启中断了上次任务"
-              : "本次调查没有完成",
-          );
-          setError("可以直接重试；原问题和已完成的历史回答仍然保留。");
+           setFailedTaskId(taskId);
+           setStatusText(
+             task.error_code === "SERVICE_RESTARTED"
+               ? "服务重启中断了上次任务"
+               : "本次调查没有完成",
+           );
+           setError(describeTaskFailure(task.error_code));
         }
       } catch {
         setStatusText("正在恢复任务连接");
@@ -562,7 +640,7 @@ function useCampusAgentController() {
         setStatusText(
           data.error_code === "CANCELED_BY_USER" ? "调查已取消" : "本次调查中断",
         );
-        setError(data.message ?? "可以保留原问题并重试。");
+        setError(describeTaskFailure(data.error_code, data.message));
         source.close();
       });
       source.onerror = () => {
@@ -659,16 +737,18 @@ function useCampusAgentController() {
         if (cancelled) return;
         setAuthSession(session);
         setMergePrompt(session.authenticated && session.visitor_data_available);
-        const [nextHealth, nextProfile, nextTodos] = await Promise.all([
+        const [nextHealth, nextProfile, nextTodos, nextAccess] = await Promise.all([
           getHealth(),
           getProfile(),
           getTodos(),
+          getAgentAccess(),
           refreshHistory(),
         ]);
         if (cancelled) return;
         setHealth(nextHealth);
         setProfile(nextProfile);
         setTodos(nextTodos);
+        setAgentAccess(nextAccess);
       } catch {
         if (!cancelled) setError("身份与 Agent 服务暂时无法连接。");
       }
@@ -736,6 +816,7 @@ function useCampusAgentController() {
         refreshHistory(),
         getProfile().then(setProfile),
         refreshTodos(),
+        refreshAgentAccess(),
       ]);
       setStage("idle");
       setStatusText("已退出校园身份，当前只使用公开信源");
@@ -757,6 +838,7 @@ function useCampusAgentController() {
       refreshHistory(),
       getProfile().then(setProfile),
       refreshTodos(),
+      refreshAgentAccess(),
     ]);
     setStage("idle");
     setStatusText("校园身份已验证，可以查询授权信源");
@@ -786,6 +868,49 @@ function useCampusAgentController() {
       return;
     }
     setError(null);
+    let access: AgentAccess;
+    try {
+      access = await refreshAgentAccess();
+    } catch (cause) {
+      setStage("idle");
+      setStatusText("暂时无法确认试用准入状态");
+      setError(describeAgentError(cause));
+      return;
+    }
+    // A paused public gate must not prevent the local administrator from
+    // exercising the Agent from the same UI.  The backend still applies the
+    // global queue and model budgets to that request; this only mirrors the
+    // documented admin bypass for the public pause/anonymous quotas.
+    if (access.mode === "paused" && authSession?.role !== "admin") {
+      setStage("idle");
+      setStatusText("公众提问暂时暂停");
+      setError("公众提问暂时暂停，管理员仍可继续测试。");
+      return;
+    }
+    if (access.verification_required) {
+      if (!access.turnstile_site_key) {
+        setStage("idle");
+        setStatusText("人机验证尚未完成配置");
+        setError("人机验证尚未完成服务器配置，请联系管理员。");
+        return;
+      }
+      setVerificationQuestion(normalized);
+      setStage("idle");
+      setStatusText("请完成一次人机验证，验证成功后自动继续");
+      return;
+    }
+    if (access.mode === "enforce" && access.window_remaining === 0) {
+      setStage("idle");
+      setStatusText("本设备的滚动窗口额度已用完");
+      setError(`请在 ${formatResetAt(access.window_reset_at)} 后再试。`);
+      return;
+    }
+    if (access.mode === "enforce" && access.daily_remaining === 0) {
+      setStage("idle");
+      setStatusText("本设备今日额度已用完");
+      setError(`明天 ${formatResetAt(access.daily_reset_at)} 后可继续试用。`);
+      return;
+    }
     setInput("");
     setStage("understanding");
     setStatusText("正在保留原意并理解你真正需要解决的事");
@@ -811,39 +936,71 @@ function useCampusAgentController() {
       const task = await sendMessage(id, normalized, optimisticId);
       openTaskStream(task.stream_url, task.task_id, task.queue_position);
       await refreshHistory();
+      void refreshAgentAccess();
     } catch (cause) {
-      setStage("failed");
+      if (cause instanceof ApiError && cause.code === "HUMAN_VERIFICATION_REQUIRED") {
+        setMessages((current) => current.filter((item) => item.id !== optimisticId));
+        setVerificationQuestion(normalized);
+        setStage("idle");
+        setStatusText("请完成一次人机验证，验证成功后自动继续");
+        setError(describeAgentError(cause));
+        return;
+      }
+      setMessages((current) => current.filter((item) => item.id !== optimisticId));
+      setStage("idle");
       workStartedAtRef.current = null;
       setStatusText("任务没有成功提交");
-      setError(cause instanceof Error ? cause.message : "任务提交失败");
+      setError(describeAgentError(cause));
+      void refreshAgentAccess();
     }
   }
 
   async function handleCancel() {
     if (!currentTaskId) return;
-    await cancelTask(currentTaskId);
-    setStage("failed");
-    workStartedAtRef.current = null;
-    setFailedTaskId(currentTaskId);
-    setCurrentTaskId(undefined);
-    setStatusText("调查已取消");
+    try {
+      await cancelTask(currentTaskId);
+      setStage("failed");
+      workStartedAtRef.current = null;
+      setFailedTaskId(currentTaskId);
+      setCurrentTaskId(undefined);
+      setStatusText("调查已取消");
+      void refreshAgentAccess();
+    } catch (cause) {
+      setError(describeAgentError(cause));
+    }
   }
 
   async function handleRetry() {
     if (!failedTaskId) return;
     setError(null);
-    workStartedAtRef.current = Date.now();
-    shouldFollowDialogueRef.current = true;
-    const task = await retryTask(failedTaskId);
-    openTaskStream(task.stream_url, task.task_id, task.queue_position);
+    try {
+      workStartedAtRef.current = Date.now();
+      shouldFollowDialogueRef.current = true;
+      const task = await retryTask(failedTaskId);
+      openTaskStream(task.stream_url, task.task_id, task.queue_position);
+      void refreshAgentAccess();
+    } catch (cause) {
+      workStartedAtRef.current = null;
+      setStage("idle");
+      setStatusText("重试没有成功提交");
+      setError(describeAgentError(cause));
+    }
   }
 
   async function handleReverify(answerId: string) {
     setError(null);
-    workStartedAtRef.current = Date.now();
-    shouldFollowDialogueRef.current = true;
-    const task = await reverifyAnswer(answerId);
-    openTaskStream(task.stream_url, task.task_id, task.queue_position);
+    try {
+      workStartedAtRef.current = Date.now();
+      shouldFollowDialogueRef.current = true;
+      const task = await reverifyAnswer(answerId);
+      openTaskStream(task.stream_url, task.task_id, task.queue_position);
+      void refreshAgentAccess();
+    } catch (cause) {
+      workStartedAtRef.current = null;
+      setStage("idle");
+      setStatusText("实时核验没有成功提交");
+      setError(describeAgentError(cause));
+    }
   }
 
   async function saveAction(answer: AgentAnswer, action: string, index: number) {
@@ -917,6 +1074,17 @@ function useCampusAgentController() {
     }
   }
 
+  async function completeAgentVerification() {
+    const pending = verificationQuestion;
+    try {
+      await refreshAgentAccess();
+      setVerificationQuestion(undefined);
+      if (pending) await submitQuestion(pending);
+    } catch (cause) {
+      setError(describeAgentError(cause));
+    }
+  }
+
   function handlePersonalDataDeleted() {
     eventSourceRef.current?.close();
     if (recoveryTimerRef.current) clearTimeout(recoveryTimerRef.current);
@@ -931,15 +1099,17 @@ function useCampusAgentController() {
     setTraceActivities([]);
     setCurrentTaskId(undefined);
     setFailedTaskId(undefined);
+    setVerificationQuestion(undefined);
     setFeedbackState({});
     workStartedAtRef.current = null;
     setWaitSeconds(0);
     setError(null);
     setStage("idle");
-    setStatusText("个人数据已删除，当前为全新工作区");
+    setStatusText("个人数据已删除，工作区已清空；安全额度按原窗口继续计算");
     void getProfile().then(setProfile).catch(() => {
       setError("个人数据已删除，但初始化新画像失败，请刷新页面。");
     });
+    void refreshAgentAccess();
   }
 
   return {
@@ -957,6 +1127,8 @@ function useCampusAgentController() {
     traceActivities,
     health,
     authSession,
+    agentAccess,
+    verificationQuestion,
     profile,
     todos,
     currentTaskId,
@@ -992,6 +1164,7 @@ function useCampusAgentController() {
     loadConversation,
     mergeIdentity,
     handleCancel,
+    completeAgentVerification,
     handleRetry,
     handleReverify,
     saveAction,
@@ -1019,6 +1192,8 @@ export function CampusAgent() {
     traceActivities,
     health,
     authSession,
+    agentAccess,
+    verificationQuestion,
     profile,
     todos,
     currentTaskId,
@@ -1054,6 +1229,7 @@ export function CampusAgent() {
     loadConversation,
     mergeIdentity,
     handleCancel,
+    completeAgentVerification,
     handleRetry,
     handleReverify,
     saveAction,
@@ -1065,71 +1241,78 @@ export function CampusAgent() {
 
   if (theme === "character") {
     return (
-      <CongyuAgentView
-        conversationId={conversationId}
-        conversations={conversations}
-        messages={messages}
-        input={input}
-        stage={stage}
-        statusText={statusText}
-        queuePosition={queuePosition}
-        waitSeconds={waitSeconds}
-        liveEvidence={liveEvidence}
-        activeEvidence={activeEvidence}
-        plan={plan}
-        traceActivities={traceActivities}
-        traceStartedAt={traceStartedAtRef.current}
-        health={health}
-        authSession={authSession}
-        authBusy={authBusy}
-        profile={profile}
-        todos={todos}
-        currentTaskId={currentTaskId}
-        failedTaskId={failedTaskId}
-        loadingConversation={loadingConversation}
-        railOpen={railOpen}
-        evidenceOpen={evidenceOpen}
-        spaceOpen={spaceOpen}
-        mergePrompt={mergePrompt}
-        feedbackState={feedbackState}
-        error={error}
-        copiedTrace={copiedTrace}
-        working={working}
-        quickQuestions={quickQuestions}
-        messageListRef={messageListRef}
-        dialogueEndRef={dialogueEndRef}
-        onInput={setInput}
-        onSubmit={onSubmit}
-        onQuestion={(question) => void submitQuestion(question)}
-        onNew={newConversation}
-        onLoadConversation={(id) => void loadConversation(id)}
-        onRailOpen={setRailOpen}
-        onEvidenceOpen={setEvidenceOpen}
-        onSpaceOpen={setSpaceOpen}
-        onEvidence={setActiveEvidence}
-        onLogout={() => void handleLogout()}
-        onAuthenticated={() => void handleAuthenticated()}
-        onMerge={() => void mergeIdentity()}
-        onDismissMerge={() => setMergePrompt(false)}
-        onCancel={() => void handleCancel()}
-        onRetry={() => void handleRetry()}
-        onReverify={(answerId) => void handleReverify(answerId)}
-        onSaveAction={(answer, action, index) => void saveAction(answer, action, index)}
-        onFeedback={(answerId, rating) => void feedback(answerId, rating)}
-        onConfirmSuggestion={(attributeId) => {
-          void resolveProfileSuggestion(attributeId, "confirm").then(async () => {
-            setProfile(await getProfile());
-          });
-        }}
-        onProfile={setProfile}
-        onTodosChanged={refreshTodos}
-        onPersonalDataDeleted={handlePersonalDataDeleted}
-        onError={setError}
-        onCopyTrace={(value) => void copyTraceId(value)}
-        onDialogueScroll={(following) => {
-          shouldFollowDialogueRef.current = following;
-        }}
-      />
+      <>
+        <AgentAccessPanel
+          access={agentAccess}
+          pendingQuestion={verificationQuestion}
+          onVerified={completeAgentVerification}
+        />
+        <CongyuAgentView
+          conversationId={conversationId}
+          conversations={conversations}
+          messages={messages}
+          input={input}
+          stage={stage}
+          statusText={statusText}
+          queuePosition={queuePosition}
+          waitSeconds={waitSeconds}
+          liveEvidence={liveEvidence}
+          activeEvidence={activeEvidence}
+          plan={plan}
+          traceActivities={traceActivities}
+          traceStartedAt={traceStartedAtRef.current}
+          health={health}
+          authSession={authSession}
+          authBusy={authBusy}
+          profile={profile}
+          todos={todos}
+          currentTaskId={currentTaskId}
+          failedTaskId={failedTaskId}
+          loadingConversation={loadingConversation}
+          railOpen={railOpen}
+          evidenceOpen={evidenceOpen}
+          spaceOpen={spaceOpen}
+          mergePrompt={mergePrompt}
+          feedbackState={feedbackState}
+          error={error}
+          copiedTrace={copiedTrace}
+          working={working}
+          quickQuestions={quickQuestions}
+          messageListRef={messageListRef}
+          dialogueEndRef={dialogueEndRef}
+          onInput={setInput}
+          onSubmit={onSubmit}
+          onQuestion={(question) => void submitQuestion(question)}
+          onNew={newConversation}
+          onLoadConversation={(id) => void loadConversation(id)}
+          onRailOpen={setRailOpen}
+          onEvidenceOpen={setEvidenceOpen}
+          onSpaceOpen={setSpaceOpen}
+          onEvidence={setActiveEvidence}
+          onLogout={() => void handleLogout()}
+          onAuthenticated={() => void handleAuthenticated()}
+          onMerge={() => void mergeIdentity()}
+          onDismissMerge={() => setMergePrompt(false)}
+          onCancel={() => void handleCancel()}
+          onRetry={() => void handleRetry()}
+          onReverify={(answerId) => void handleReverify(answerId)}
+          onSaveAction={(answer, action, index) => void saveAction(answer, action, index)}
+          onFeedback={(answerId, rating) => void feedback(answerId, rating)}
+          onConfirmSuggestion={(attributeId) => {
+            void resolveProfileSuggestion(attributeId, "confirm").then(async () => {
+              setProfile(await getProfile());
+            });
+          }}
+          onProfile={setProfile}
+          onTodosChanged={refreshTodos}
+          onPersonalDataDeleted={handlePersonalDataDeleted}
+          onError={setError}
+          onCopyTrace={(value) => void copyTraceId(value)}
+          onDialogueScroll={(following) => {
+            shouldFollowDialogueRef.current = following;
+          }}
+        />
+      </>
     );
   }
 
@@ -1156,6 +1339,12 @@ export function CampusAgent() {
       }
       utilities={null}
     >
+
+      <AgentAccessPanel
+        access={agentAccess}
+        pendingQuestion={verificationQuestion}
+        onVerified={completeAgentVerification}
+      />
 
       {mergePrompt && (
         <div className="merge-banner">
@@ -1731,6 +1920,125 @@ export function CampusAgent() {
         onError={setError}
       />
     </AppChrome>
+  );
+}
+
+type TurnstileWidgetApi = {
+  render: (
+    element: HTMLElement,
+    options: {
+      sitekey: string;
+      theme?: "light" | "dark" | "auto";
+      callback: (token: string) => void;
+      "expired-callback"?: () => void;
+      "error-callback"?: () => void;
+    },
+  ) => string | number;
+  reset: (widgetId?: string | number) => void;
+};
+
+function AgentAccessPanel({
+  access,
+  pendingQuestion,
+  onVerified,
+}: {
+  access: AgentAccess | null;
+  pendingQuestion?: string;
+  onVerified: () => Promise<void>;
+}) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const widgetIdRef = useRef<string | number | undefined>(undefined);
+  const [widgetError, setWidgetError] = useState<string>();
+  const [verifying, setVerifying] = useState(false);
+
+  useEffect(() => {
+    if (!access?.verification_required || !access.turnstile_site_key) {
+      widgetIdRef.current = undefined;
+      return;
+    }
+    let cancelled = false;
+    const renderWidget = () => {
+      if (cancelled || !containerRef.current || widgetIdRef.current !== undefined) return;
+      const turnstile = (window as Window & { turnstile?: TurnstileWidgetApi }).turnstile;
+      if (!turnstile) {
+        setWidgetError("人机验证组件尚未加载，请稍后重试。");
+        return;
+      }
+      setWidgetError(undefined);
+      widgetIdRef.current = turnstile.render(containerRef.current, {
+        sitekey: access.turnstile_site_key as string,
+        theme: "auto",
+        callback: (token) => {
+          setVerifying(true);
+          setWidgetError(undefined);
+          void verifyAgent(token)
+            .then(onVerified)
+            .catch((cause) => {
+              setWidgetError(describeAgentError(cause));
+              if (widgetIdRef.current !== undefined) turnstile.reset(widgetIdRef.current);
+            })
+            .finally(() => setVerifying(false));
+        },
+        "expired-callback": () => setWidgetError("验证已过期，请重新完成验证。"),
+        "error-callback": () => setWidgetError("验证组件暂时不可用，请稍后重试。"),
+      });
+    };
+
+    const existing = document.querySelector<HTMLScriptElement>(
+      "script[data-hzcu-turnstile]",
+    );
+    if ((window as Window & { turnstile?: TurnstileWidgetApi }).turnstile) {
+      renderWidget();
+    } else if (existing) {
+      existing.addEventListener("load", renderWidget);
+      existing.addEventListener("error", () => setWidgetError("验证组件加载失败，请稍后重试。"));
+    } else {
+      const script = document.createElement("script");
+      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+      script.async = true;
+      script.defer = true;
+      script.dataset.hzcuTurnstile = "true";
+      script.addEventListener("load", renderWidget);
+      script.addEventListener("error", () => setWidgetError("验证组件加载失败，请稍后重试。"));
+      document.head.appendChild(script);
+    }
+    return () => {
+      cancelled = true;
+      if (existing) existing.removeEventListener("load", renderWidget);
+    };
+  }, [access?.turnstile_site_key, access?.verification_required, onVerified]);
+
+  if (!access) return null;
+  const showQuota = access.mode === "enforce" && (
+    access.window_remaining !== null || access.daily_remaining !== null
+  );
+  return (
+    <>
+      {showQuota ? (
+        <div className="agent-access-status" role="status">
+          <span>匿名试用</span>
+          <b>滚动窗口剩余 {access.window_remaining ?? "不限"}</b>
+          <b>今日剩余 {access.daily_remaining ?? "不限"}</b>
+          <small>窗口重置：{formatResetAt(access.window_reset_at)}</small>
+          <small>日额度重置：{formatResetAt(access.daily_reset_at)}</small>
+          {(access.running > 0 || access.queued > 0) && <small>运行 / 排队：{access.running} / {access.queued}</small>}
+        </div>
+      ) : null}
+      {access.verification_required ? (
+        <section className="agent-verification-gate" aria-live="polite">
+          <div>
+            <ShieldCheck size={18} />
+            <span>
+              <b>先完成一次人机验证</b>
+              <small>{pendingQuestion ? `验证后自动继续：${pendingQuestion}` : "验证租约有效期为 24 小时。"}</small>
+            </span>
+          </div>
+          <div ref={containerRef} className="agent-turnstile-widget" />
+          {verifying ? <small>正在确认验证结果…</small> : null}
+          {widgetError ? <small className="agent-verification-error">{widgetError}</small> : null}
+        </section>
+      ) : null}
+    </>
   );
 }
 

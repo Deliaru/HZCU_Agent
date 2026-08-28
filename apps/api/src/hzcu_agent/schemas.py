@@ -106,9 +106,33 @@ class CredentialLoginRequest(BaseModel):
 
 
 class SendMessageRequest(BaseModel):
-    message: str = Field(min_length=1, max_length=8000)
+    # The runtime Agent policy applies the deployment-specific (1500 by
+    # default) limit; keep a higher schema ceiling so an administrator can
+    # intentionally raise that limit without being silently capped here.
+    message: str = Field(min_length=1, max_length=20_000)
     client_message_id: str | None = Field(default=None, max_length=120)
     profile_overrides: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentVerificationRequest(BaseModel):
+    token: str = Field(min_length=1, max_length=4096)
+
+
+class AgentVerificationResponse(BaseModel):
+    verified_until: datetime
+
+
+class AgentAccessResponse(BaseModel):
+    mode: Literal["observe", "enforce", "paused"]
+    turnstile_enabled: bool
+    turnstile_site_key: str | None = None
+    verification_required: bool = False
+    window_remaining: int | None = None
+    daily_remaining: int | None = None
+    window_reset_at: datetime | None = None
+    daily_reset_at: datetime | None = None
+    running: int = 0
+    queued: int = 0
 
 
 class AcceptedTaskResponse(BaseModel):
@@ -141,6 +165,8 @@ class SemanticSignals(BaseModel):
     intents: list[str] = Field(default_factory=list)
     freshness: Literal["stable", "current", "live_required"] = "current"
     task_shape: Literal["simple", "compound", "contextual"] = "simple"
+    domain_scope: Literal["in_scope", "ambiguous", "out_of_scope"] = "ambiguous"
+    scope_reason: str = ""
     answer_shape: Literal[
         "fact",
         "enumeration",
@@ -613,6 +639,62 @@ class AdminModelConfigurationUpdate(BaseModel):
         if not normalized or any(character.isspace() for character in normalized):
             raise ValueError("model name cannot contain whitespace")
         return normalized
+
+
+class AdminAgentPolicyResponse(BaseModel):
+    mode: Literal["observe", "enforce", "paused"]
+    subject_window_limit: int
+    subject_window_seconds: int
+    subject_daily_limit: int
+    max_running_per_subject: int
+    max_queued_per_subject: int
+    global_queue_limit: int
+    queue_timeout_seconds: int
+    agent_concurrency: int
+    model_concurrency: int
+    global_daily_task_limit: int
+    global_daily_model_call_limit: int
+    per_task_model_call_limit: int
+    max_message_length: int
+    scope_policy: Literal["balanced", "strict"]
+    timezone: str
+    turnstile_enabled: bool
+    turnstile_site_key: str | None = None
+    turnstile_secret_configured: bool = False
+    turnstile_secret_hint: str | None = None
+    verification_lease_hours: int
+    ip_new_subjects_per_hour: int
+    updated_at: datetime | None = None
+    today_task_count: int = 0
+    today_model_call_count: int = 0
+    today_rejection_counts: dict[str, int] = Field(default_factory=dict)
+    running_count: int = 0
+    queued_count: int = 0
+    oldest_queue_wait_seconds: int = 0
+
+
+class AdminAgentPolicyUpdate(BaseModel):
+    mode: Literal["observe", "enforce", "paused"]
+    subject_window_limit: int = Field(ge=1, le=100)
+    subject_window_seconds: int = Field(ge=1, le=86400)
+    subject_daily_limit: int = Field(ge=1, le=1000)
+    max_running_per_subject: int = Field(ge=1, le=4)
+    max_queued_per_subject: int = Field(ge=0, le=8)
+    global_queue_limit: int = Field(ge=1, le=10000)
+    queue_timeout_seconds: int = Field(ge=1, le=86400)
+    agent_concurrency: int = Field(ge=1, le=64)
+    model_concurrency: int = Field(ge=1, le=64)
+    global_daily_task_limit: int = Field(ge=1, le=100000)
+    global_daily_model_call_limit: int = Field(ge=1, le=1000000)
+    per_task_model_call_limit: int = Field(ge=1, le=100)
+    max_message_length: int = Field(ge=1, le=20000)
+    scope_policy: Literal["balanced", "strict"]
+    timezone: str = Field(min_length=1, max_length=64)
+    turnstile_enabled: bool
+    turnstile_site_key: str | None = Field(default=None, max_length=256)
+    turnstile_secret: SecretStr | None = Field(default=None, max_length=4096)
+    verification_lease_hours: int = Field(ge=1, le=168)
+    ip_new_subjects_per_hour: int = Field(ge=1, le=10000)
 
 
 class AdminTaskHealthItem(BaseModel):

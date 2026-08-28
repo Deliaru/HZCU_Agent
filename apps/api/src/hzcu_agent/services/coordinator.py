@@ -42,6 +42,12 @@ from hzcu_agent.schemas import (
     ToolResult,
     VerificationFinding,
 )
+from hzcu_agent.services.agent_policy import (
+    AgentModelBudgetExceeded,
+    AgentPolicyService,
+    reset_current_agent_task,
+    set_current_agent_task,
+)
 from hzcu_agent.services.evidence_workspace import EvidenceWorkspace
 from hzcu_agent.services.grounding import (
     CitationVerifier,
@@ -142,24 +148,40 @@ class AgentCoordinator:
         broker: TaskEventBroker,
         models: ModelGateway,
         tools: ToolGateway,
+        policy: AgentPolicyService | None = None,
     ) -> None:
         self._settings = settings
         self._database = database
         self._broker = broker
         self._models = models
         self._tools = tools
+        self._policy = policy
         self._citation_verifier = CitationVerifier()
         self._task_slots = asyncio.Semaphore(settings.max_concurrent_agent_tasks)
         self._subject_locks: dict[str, asyncio.Lock] = {}
 
     async def run(self, task_id: str) -> None:
-        subject_id = await self._task_subject_id(task_id)
-        subject_lock = self._subject_locks.setdefault(
-            subject_id or task_id,
-            asyncio.Lock(),
-        )
-        async with self._task_slots, subject_lock:
-            await self._run_in_slot(task_id)
+        task_token = set_current_agent_task(task_id)
+        try:
+            subject_id = await self._task_subject_id(task_id)
+            if self._policy is None:
+                subject_lock = self._subject_locks.setdefault(
+                    subject_id or task_id,
+                    asyncio.Lock(),
+                )
+                async with self._task_slots, subject_lock:
+                    await self._run_in_slot(task_id)
+            else:
+                # The database-backed scheduler already enforces the dynamic
+                # ``max_running_per_subject`` policy.  Keeping the legacy
+                # mutex here would silently cap every subject at one running
+                # task even after an administrator raised that setting.  The
+                # no-policy path retains the mutex for older direct callers
+                # that do not have a scheduler coordinating fairness.
+                async with self._policy.task_slot():
+                    await self._run_in_slot(task_id)
+        finally:
+            reset_current_agent_task(task_token)
 
     async def _run_in_slot(self, task_id: str) -> None:
         performance_trace = AgentPerformanceTrace()
@@ -200,6 +222,18 @@ class AgentCoordinator:
                     tool_catalog=tool_catalog,
                     current_time=current_time,
                 )
+            except AgentModelBudgetExceeded:
+                await self._set_task_failed(task_id, "AGENT_MODEL_BUDGET_EXHAUSTED")
+                await self._broker.publish(
+                    task_id,
+                    "task.failed",
+                    {
+                        "task_id": task_id,
+                        "error_code": "AGENT_MODEL_BUDGET_EXHAUSTED",
+                        "message": "今日 Agent 模型调用额度已用完，请明天再试。",
+                    },
+                )
+                return
             except StructuredModelOutputError as exc:
                 logger.warning(
                     "Prepare output exhausted structured recovery; using minimal plan",
@@ -216,6 +250,7 @@ class AgentCoordinator:
                 prepared.dossier,
                 task_context["original_query"],
             )
+            dossier = self._with_domain_scope(dossier, task_context["original_query"])
             plan = prepared.plan
             await self._broker.publish(
                 task_id,
@@ -231,9 +266,13 @@ class AgentCoordinator:
                 },
             )
 
-            initial_steps = self._normalize_initial_steps(
-                plan.steps,
-                original_query=task_context["original_query"],
+            initial_steps = (
+                []
+                if dossier.signals.domain_scope == "out_of_scope"
+                else self._normalize_initial_steps(
+                    plan.steps,
+                    original_query=task_context["original_query"],
+                )
             )
             investigation_freshness = (
                 "live_required"
@@ -246,6 +285,15 @@ class AgentCoordinator:
                 freshness=investigation_freshness,
                 tool_catalog=tool_catalog,
             )
+            if dossier.signals.domain_scope == "ambiguous":
+                # Ambiguous wording is allowed to discover a campus answer,
+                # but it must stay inside the local, registered read-only
+                # corpus.  Do not let a vague request turn into a general web
+                # search or an authenticated notice query.
+                planned_steps = self._restrict_ambiguous_steps(
+                    planned_steps,
+                    original_query=task_context["original_query"],
+                )
             executable_steps = planned_steps[: self._settings.max_tool_calls]
             await self._broker.publish(
                 task_id,
@@ -281,6 +329,8 @@ class AgentCoordinator:
             composition: GroundedAnswerComposition | None = None
 
             for round_number in range(1, self._settings.max_tool_rounds + 1):
+                if dossier.signals.domain_scope == "out_of_scope":
+                    break
                 remaining_calls = self._settings.max_tool_calls - tool_call_count
                 round_steps = self._unique_steps(
                     pending_steps,
@@ -380,6 +430,18 @@ class AgentCoordinator:
                         ),
                         current_time=utc_now(),
                     )
+                except AgentModelBudgetExceeded:
+                    composition = GroundedAnswerComposition(
+                        answer=self._safe_grounding_fallback(
+                            original_query=task_context["original_query"],
+                            evidence=answer_evidence,
+                        ),
+                        assessment=GroundingAssessment(
+                            status="conditional",
+                            summary="模型调用额度已用完，已使用当前证据安全收束。",
+                            missing_evidence=["未完成的模型核验"],
+                        ),
+                    )
                 except StructuredModelOutputError as exc:
                     logger.warning(
                         "Compose output exhausted structured recovery; "
@@ -424,6 +486,11 @@ class AgentCoordinator:
                     composition.assessment.follow_up_steps,
                     freshness=investigation_freshness,
                 )
+                if dossier.signals.domain_scope == "ambiguous":
+                    pending_steps = self._restrict_ambiguous_steps(
+                        pending_steps,
+                        original_query=task_context["original_query"],
+                    )
                 if not self._unique_steps(
                     pending_steps,
                     set(attempted_signatures),
@@ -431,7 +498,15 @@ class AgentCoordinator:
                 ):
                     break
 
-            if composition is None:
+            if dossier.signals.domain_scope == "out_of_scope":
+                composition = GroundedAnswerComposition(
+                    answer=self._scope_refusal_answer(),
+                    assessment=GroundingAssessment(
+                        status="unauthorized",
+                        summary="本服务仅处理浙大城市学院相关的官方信息查询。",
+                    ),
+                )
+            elif composition is None:
                 raise RuntimeError("Answer composition did not run")
 
             evidence = workspace.ranked(limit=24)
@@ -439,7 +514,16 @@ class AgentCoordinator:
                 original_query=task_context["original_query"],
                 evidence=evidence,
             )
-            answer = self._calibrate_answer(composed_answer, evidence)
+            if dossier.signals.domain_scope == "ambiguous" and (
+                not evidence
+                or not self._campus_evidence_is_relevant(
+                    task_context["original_query"],
+                    evidence,
+                )
+            ):
+                answer = self._scope_refusal_answer()
+            else:
+                answer = self._calibrate_answer(composed_answer, evidence)
             retrieval_coverage_risk = self._retrieval_coverage_risk(tool_observations)
             if retrieval_coverage_risk and answer.confidence == "high":
                 answer = answer.model_copy(update={"confidence": "medium"})
@@ -474,6 +558,11 @@ class AgentCoordinator:
                         evidence=evidence,
                         composition=composition,
                         current_time=utc_now(),
+                    )
+                except AgentModelBudgetExceeded:
+                    verification = AnswerVerification(
+                        verdict="research_required",
+                        summary="模型调用额度已用完，候选结论未被视为已核验。",
                     )
                 except StructuredModelOutputError as exc:
                     logger.warning(
@@ -929,6 +1018,60 @@ class AgentCoordinator:
         return normalized
 
     @staticmethod
+    def _restrict_ambiguous_steps(
+        steps: list[InvestigationStep],
+        *,
+        original_query: str,
+    ) -> list[InvestigationStep]:
+        local_steps = [step for step in steps if step.tool in _LOCAL_MIRROR_TOOLS]
+        if local_steps:
+            return local_steps
+        return [
+            InvestigationStep(
+                id="ambiguous-local-memory",
+                purpose="只在登记的校园本地镜像中确认问题是否与学校相关",
+                tool="search_campus_memory",
+                arguments={"query": original_query[:200], "top_k": 12},
+                can_run_in_parallel=True,
+                success_condition="取得能够建立校园相关性的官方镜像材料",
+            )
+        ]
+
+    @staticmethod
+    def _campus_evidence_is_relevant(
+        query: str,
+        evidence: list[Evidence],
+    ) -> bool:
+        """Require a lexical bridge before an ambiguous request can be answered."""
+
+        query_terms: list[str] = []
+        for value in re.findall(r"[\u3400-\u9fff]+|[a-z0-9]{3,}", query.casefold()):
+            if re.fullmatch(r"[a-z0-9]+", value):
+                query_terms.append(value)
+                continue
+            # Chinese users often omit word boundaries.  Keep short n-grams
+            # so “选课快开始了吗” can bridge to an excerpt containing “选课”
+            # without maintaining a topic-specific keyword dictionary.
+            for size in (4, 3, 2):
+                if len(value) >= size:
+                    query_terms.extend(
+                        value[index : index + size]
+                        for index in range(len(value) - size + 1)
+                    )
+        query_terms = [
+            value
+            for value in query_terms
+            if value not in {"什么", "怎么", "如何", "哪里", "哪个", "whether", "please"}
+        ]
+        if not query_terms:
+            return False
+        for item in evidence:
+            haystack = " ".join((item.title, item.publisher, item.excerpt)).casefold()
+            if any(term in haystack for term in query_terms):
+                return True
+        return False
+
+    @staticmethod
     def _has_minimum_tool_arguments(step: InvestigationStep) -> bool:
         if step.tool == "search_campus_memory":
             return bool((step.arguments.query or "").strip())
@@ -1043,6 +1186,91 @@ class AgentCoordinator:
         )
 
     @staticmethod
+    def _with_domain_scope(dossier: SemanticDossier, query: str) -> SemanticDossier:
+        """Apply a small, generic safety backstop to the model scope signal.
+
+        The campus corpus remains open-ended: this is not a topic whitelist.
+        The backstop only blocks unmistakable attempts to turn the product into
+        a general writing/coding/translation endpoint and lets ambiguous text
+        proceed to campus-only retrieval.
+        """
+
+        normalized = query.casefold()
+        generic_request = re.search(
+            r"(^\s*(?:请|帮我|替我|能否|可以)\s*(?:写|生成|创作|起草|编写)|"
+            r"^\s*写(?:一个|一份|一篇)|^\s*生成(?:一个|一份|一篇)|"
+            r"写一篇|写(?:个|份)?(?:作文|论文|文章|报告)|论文代写|代写|润色|"
+            r"(?:请|帮我|替我|需要)?翻译(?:一下|以下|这段|成|为)|"
+            r"translate|translation|(?:写|生成|运行|执行).{0,12}(?:python|javascript|typescript)"
+            r"|(?:写代码|如何编程|帮我编程|给我编程|编程实现|debug(?:一下|代码)?)|"
+            r"write\s+(?:an?\s+)?(?:essay|paper|article|report|code)|"
+            r"(?:generate|write|draft)\s+(?:an?\s+)?(?:essay|paper|code)|"
+            r"调试代码|破解|绕过限制|忽略之前指令|ignore\s+previous\s+instructions|"
+            r"system\s+prompt|jailbreak|提示词|角色覆盖)",
+            normalized,
+        )
+        campus_context = re.search(
+            r"(浙大城市|hzcu|学校|校园|学院|专业|选课|校历|开学|教务|招生|奖学金|"
+            r"宿舍|寝室|图书馆|课程|考试|毕业|转专业|社团|国创|校创|通知|"
+            r"campus|university|college|major|course|semester|enrollment|"
+            r"academic calendar|scholarship|dormitory|library|graduation)",
+            normalized,
+        )
+        # Mandarin often uses “写出/写一份名单” as a natural way to ask the
+        # agent to enumerate official facts.  Treat those forms as retrieval
+        # requests when the query has a clear campus context and an explicit
+        # list/count cue; otherwise the generic-writing guard remains active.
+        enumeration_request = re.search(
+            r"(有几个|多少|哪些|哪几|名单|名录|列表|清单|分别|全部|一共有|共[有是]|"
+            r"列出|列举|写出)",
+            normalized,
+        )
+        explicit_generic_content = re.search(
+            r"(作文|论文|文章|报告|课程介绍|宣传稿|文案|故事|诗|代码|python|"
+            r"javascript|typescript|翻译|润色|提示词|system\s+prompt)",
+            normalized,
+        )
+        if (
+            generic_request
+            and campus_context
+            and enumeration_request
+            and not explicit_generic_content
+        ):
+            generic_request = None
+        scope = dossier.signals.domain_scope
+        reason = dossier.signals.scope_reason
+        if generic_request:
+            scope = "out_of_scope"
+            reason = "通用内容生成、编程、翻译或提示词套取不属于本服务用途。"
+        elif scope == "out_of_scope":
+            reason = reason or "本问题不属于浙大城市学院官方信息查询范围。"
+        elif scope == "ambiguous" and campus_context:
+            scope = "in_scope"
+            reason = reason or "问题包含明确校园语境，将限定在官方材料检索。"
+        return dossier.model_copy(
+            update={
+                "signals": dossier.signals.model_copy(
+                    update={"domain_scope": scope, "scope_reason": reason[:240]}
+                )
+            }
+        )
+
+    @staticmethod
+    def _scope_refusal_answer() -> AgentAnswer:
+        return AgentAnswer(
+            headline="仅处理校园官方信息",
+            answer_markdown=(
+                "我只能帮助查询、解释和核对浙大城市学院相关的官方信息。"
+                "请换成学校通知、校历、课程、专业、招生或校园服务等具体问题。"
+            ),
+            assumptions=[],
+            next_actions=[],
+            confidence="low",
+            verification_mode="no_campus_evidence",
+            claims=[],
+        )
+
+    @staticmethod
     def _fallback_prepared_investigation(query: str) -> PreparedInvestigation:
         bounded_query = query.strip()[:200] or "校园信息查询"
         return PreparedInvestigation(
@@ -1055,7 +1283,11 @@ class AgentCoordinator:
                         required_evidence=["登记校园来源中的直接官方材料"],
                     )
                 ],
-                signals=SemanticSignals(freshness="current"),
+                signals=SemanticSignals(
+                    freshness="current",
+                    domain_scope="ambiguous",
+                    scope_reason="结构化准备失败，先限定在本地校园镜像检索。",
+                ),
                 uncertainties=["结构化语义准备失败，保留原问题执行最小检索。"],
             ),
             plan=InvestigationPlan(

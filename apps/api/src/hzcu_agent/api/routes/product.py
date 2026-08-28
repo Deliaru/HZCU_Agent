@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from statistics import median
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -134,42 +134,7 @@ async def delete_personal_data(
 
     enforce_csrf(request, principal)
     subject_id = _require_subject(principal)
-    task_ids = list(
-        (
-            await session.scalars(
-                select(AgentTask.id)
-                .join(Conversation, AgentTask.conversation_id == Conversation.id)
-                .where(Conversation.owner_subject_id == subject_id)
-            )
-        ).all()
-    )
-    running_tasks: list[asyncio.Task[object]] = []
-    for task_id in task_ids:
-        task = request.app.state.background_tasks.get(task_id)
-        if task is not None and not task.done():
-            task.cancel()
-            running_tasks.append(task)
-    if running_tasks:
-        await asyncio.gather(*running_tasks, return_exceptions=True)
-    await session.execute(delete(Conversation).where(Conversation.owner_subject_id == subject_id))
-    await session.execute(delete(UserTodo).where(UserTodo.subject_id == subject_id))
-    await session.execute(delete(AnswerFeedback).where(AnswerFeedback.subject_id == subject_id))
-    await session.execute(delete(ProfileAttribute).where(ProfileAttribute.subject_id == subject_id))
-    profile = await session.get(StudentProfile, subject_id)
-    if profile is None:
-        session.add(
-            StudentProfile(
-                subject_id=subject_id,
-                personalization_enabled=True,
-                onboarding_completed=False,
-                created_at=utc_now(),
-                updated_at=utc_now(),
-            )
-        )
-    else:
-        profile.personalization_enabled = True
-        profile.onboarding_completed = False
-        profile.updated_at = utc_now()
+    await _clear_subject_personal_data(request, session, subject_id)
     await session.commit()
 
 
@@ -581,7 +546,6 @@ async def merge_visitor_identity(
 @router.delete("/identity/visitor-data", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_visitor_data(
     request: Request,
-    response: Response,
     session: SessionDependency,
     principal: PrincipalDependency,
 ) -> None:
@@ -594,29 +558,12 @@ async def delete_visitor_data(
         return
     visitor = await session.get(ProductSubject, visitor_id)
     if visitor is not None and visitor.subject_kind == "visitor":
-        task_ids = list(
-            (
-                await session.scalars(
-                    select(AgentTask.id)
-                    .join(Conversation, AgentTask.conversation_id == Conversation.id)
-                    .where(Conversation.owner_subject_id == visitor_id)
-                )
-            ).all()
-        )
-        running_tasks: list[asyncio.Task[object]] = []
-        for task_id in task_ids:
-            task = request.app.state.background_tasks.get(task_id)
-            if task is not None and not task.done():
-                task.cancel()
-                running_tasks.append(task)
-        if running_tasks:
-            await asyncio.gather(*running_tasks, return_exceptions=True)
-        await session.delete(visitor)
+        # Keep the anonymous subject/session shell so the short-lived Agent
+        # admission events remain attached until their natural expiry.  Only
+        # product data is removed; deleting the subject here would let a user
+        # reset the rolling quota by immediately receiving a new cookie.
+        await _clear_subject_personal_data(request, session, visitor_id)
         await session.commit()
-    settings = request.app.state.settings
-    response.delete_cookie(settings.visitor_cookie_name, path="/")
-    if not principal.authenticated:
-        response.delete_cookie(settings.auth_csrf_cookie_name, path="/")
 
 
 @router.get("/admin/overview", response_model=AdminOverviewResponse)
@@ -795,6 +742,61 @@ async def admin_conversation_trace(
             for item in tasks
         ],
     )
+
+
+async def _clear_subject_personal_data(
+    request: Request,
+    session: AsyncSession,
+    subject_id: str,
+) -> None:
+    """Remove product data while retaining the subject shell and security counters.
+
+    Admission events and daily usage counters intentionally live outside the
+    personal-data surface.  Keeping the ``ProductSubject`` (and its visitor
+    session) means deleting data cannot be used to reset an anonymous quota;
+    the short-lived security records are cleaned up by the admission service.
+    """
+
+    task_ids = list(
+        (
+            await session.scalars(
+                select(AgentTask.id)
+                .join(Conversation, AgentTask.conversation_id == Conversation.id)
+                .where(Conversation.owner_subject_id == subject_id)
+            )
+        ).all()
+    )
+    running_tasks: list[asyncio.Task[object]] = []
+    background_tasks = getattr(request.app.state, "background_tasks", {})
+    for task_id in task_ids:
+        task = background_tasks.get(task_id)
+        if task is not None and not task.done():
+            task.cancel()
+            running_tasks.append(task)
+    if running_tasks:
+        await asyncio.gather(*running_tasks, return_exceptions=True)
+
+    await session.execute(delete(Conversation).where(Conversation.owner_subject_id == subject_id))
+    await session.execute(delete(UserTodo).where(UserTodo.subject_id == subject_id))
+    await session.execute(delete(AnswerFeedback).where(AnswerFeedback.subject_id == subject_id))
+    await session.execute(delete(ProfileAttribute).where(ProfileAttribute.subject_id == subject_id))
+
+    now = utc_now()
+    profile = await session.get(StudentProfile, subject_id)
+    if profile is None:
+        session.add(
+            StudentProfile(
+                subject_id=subject_id,
+                personalization_enabled=True,
+                onboarding_completed=False,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+    else:
+        profile.personalization_enabled = True
+        profile.onboarding_completed = False
+        profile.updated_at = now
 
 
 async def _ensure_profile(

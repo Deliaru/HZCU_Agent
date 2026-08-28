@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import update
 
-from hzcu_agent.api.routes import admin, auth, conversations, health, product, sources
+from hzcu_agent.api.routes import admin, agent, auth, conversations, health, product, sources
 from hzcu_agent.auth.campus_access import CampusAccessBroker
 from hzcu_agent.auth.local_admin import LocalAdminAuthenticator
 from hzcu_agent.auth.product_identity import ProductIdentityService
@@ -18,6 +18,8 @@ from hzcu_agent.ingestion.service import IngestionService
 from hzcu_agent.models import AgentTask, utc_now
 from hzcu_agent.observability import RequestContextMiddleware, configure_logging
 from hzcu_agent.runtime import TaskEventBroker
+from hzcu_agent.services.agent_admission import AgentAdmissionService
+from hzcu_agent.services.agent_policy import AgentPolicyService
 from hzcu_agent.services.coordinator import AgentCoordinator
 from hzcu_agent.services.image_reader import CampusImageReader
 from hzcu_agent.services.model_gateway import ManagedModelGateway
@@ -25,6 +27,7 @@ from hzcu_agent.services.model_runtime import (
     ModelConfigurationStore,
     model_config_from_settings,
 )
+from hzcu_agent.services.task_scheduler import AgentTaskScheduler
 from hzcu_agent.services.tool_gateway import ToolGateway
 from hzcu_agent.tools.campus_document import CampusDocumentExplorer
 from hzcu_agent.tools.campus_memory import CampusMemorySearchTool
@@ -57,11 +60,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             settings=resolved_settings,
             database=database,
         )
+        policy = AgentPolicyService(settings=resolved_settings, database=database)
+        await policy.initialize()
+        admission = AgentAdmissionService(database=database, policy=policy)
+        await admission.cleanup()
         model_configuration_store = ModelConfigurationStore(resolved_settings)
         async with database.session_factory() as session:
             await session.execute(
                 update(AgentTask)
-                .where(AgentTask.status.in_(("queued", "running")))
+                .where(AgentTask.status == "running")
                 .values(
                     status="failed",
                     error_code="SERVICE_RESTARTED",
@@ -81,7 +88,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         broker = TaskEventBroker()
         model_gateway = ManagedModelGateway(
-            stored_model_config or model_config_from_settings(resolved_settings)
+            stored_model_config or model_config_from_settings(resolved_settings),
+            call_gate=policy,
         )
         campus_documents = CampusDocumentExplorer(database)
         campus_memory = CampusMemorySearchTool(
@@ -109,6 +117,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             broker=broker,
             models=model_gateway,
             tools=tool_gateway,
+            policy=policy,
         )
         app.state.settings = resolved_settings
         app.state.database = database
@@ -124,7 +133,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.tools = tool_gateway
         app.state.coordinator = coordinator
         app.state.background_tasks = {}
+        scheduler = AgentTaskScheduler(
+            database=database,
+            coordinator=coordinator,
+            broker=broker,
+            policy=policy,
+            admission=admission,
+            background_tasks=app.state.background_tasks,
+        )
+        app.state.policy = policy
+        app.state.admission = admission
+        app.state.scheduler = scheduler
+        scheduler.start()
         yield
+        await scheduler.stop()
         running_tasks = tuple(app.state.background_tasks.values())
         for task in running_tasks:
             task.cancel()
@@ -154,6 +176,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.add_middleware(RequestContextMiddleware)
     app.include_router(health.router, prefix=resolved_settings.api_prefix)
+    app.include_router(agent.router, prefix=resolved_settings.api_prefix)
     app.include_router(auth.router, prefix=resolved_settings.api_prefix)
     app.include_router(admin.router, prefix=resolved_settings.api_prefix)
     app.include_router(conversations.router, prefix=resolved_settings.api_prefix)
