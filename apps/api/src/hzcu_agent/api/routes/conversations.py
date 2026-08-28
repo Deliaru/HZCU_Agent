@@ -23,6 +23,7 @@ from hzcu_agent.models import (
     AnswerGroundingRecord,
     AnswerRecord,
     ClaimEvidenceRecord,
+    CommunityQuestion,
     Conversation,
     EvidenceRecord,
     Message,
@@ -48,6 +49,7 @@ from hzcu_agent.schemas import (
     Evidence,
     GroundingSummary,
     ProfileAttributeResponse,
+    QuestionOfferResponse,
     SendMessageRequest,
     TaskResponse,
     VerificationFinding,
@@ -72,6 +74,7 @@ async def create_conversation(
     session: SessionDependency,
     principal: PrincipalDependency,
 ) -> ConversationResponse:
+    _require_agent_access(principal)
     enforce_required_login(request, principal)
     enforce_csrf(request, principal)
     if principal.product_subject_id is None:
@@ -101,6 +104,7 @@ async def list_conversations(
     limit: int = Query(default=30, ge=1, le=60),
     cursor: str | None = Query(default=None, max_length=300),
 ) -> ConversationListResponse:
+    _require_agent_access(principal)
     subject_id = _require_subject(principal)
     query = select(Conversation).where(Conversation.owner_subject_id == subject_id)
     if cursor:
@@ -167,6 +171,7 @@ async def get_conversation(
     session: SessionDependency,
     principal: PrincipalDependency,
 ) -> ConversationDetailResponse:
+    _require_agent_access(principal)
     conversation = await session.get(Conversation, conversation_id)
     if conversation is None or not _can_access_conversation(conversation, principal):
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -231,6 +236,7 @@ async def patch_conversation(
     session: SessionDependency,
     principal: PrincipalDependency,
 ) -> ConversationSummaryResponse:
+    _require_agent_access(principal)
     enforce_csrf(request, principal)
     conversation = await session.get(Conversation, conversation_id)
     if conversation is None or not _can_access_conversation(conversation, principal):
@@ -256,6 +262,7 @@ async def delete_conversation(
     session: SessionDependency,
     principal: PrincipalDependency,
 ) -> None:
+    _require_agent_access(principal)
     enforce_csrf(request, principal)
     conversation = await session.get(Conversation, conversation_id)
     if conversation is None or not _can_access_conversation(conversation, principal):
@@ -291,6 +298,7 @@ async def send_message(
     session: SessionDependency,
     principal: PrincipalDependency,
 ) -> AcceptedTaskResponse:
+    _require_agent_access(principal)
     enforce_required_login(request, principal)
     enforce_csrf(request, principal)
     conversation = await session.get(Conversation, conversation_id)
@@ -369,6 +377,7 @@ async def send_message(
             status="queued",
             access_scopes=sorted(principal.visibility_scopes),
             request_mode="normal",
+            response_style=payload.response_style,
             requested_by_subject_id=principal.product_subject_id,
             queue_deadline_at=admission.queue_deadline_at,
             created_at=now,
@@ -417,6 +426,7 @@ async def get_task(
     session: SessionDependency,
     principal: PrincipalDependency,
 ) -> TaskResponse:
+    _require_agent_access(principal)
     task = await session.get(AgentTask, task_id)
     if task is None or not await _can_access_task(session, task, principal):
         raise HTTPException(status_code=404, detail="Task not found")
@@ -436,6 +446,7 @@ async def cancel_task(
     session: SessionDependency,
     principal: PrincipalDependency,
 ) -> TaskResponse:
+    _require_agent_access(principal)
     enforce_csrf(request, principal)
     task = await session.get(AgentTask, task_id)
     if task is None or not await _can_access_task(session, task, principal):
@@ -511,6 +522,7 @@ async def retry_task(
     session: SessionDependency,
     principal: PrincipalDependency,
 ) -> AcceptedTaskResponse:
+    _require_agent_access(principal)
     enforce_csrf(request, principal)
     parent = await session.get(AgentTask, task_id)
     if parent is None or not await _can_access_task(session, parent, principal):
@@ -553,6 +565,7 @@ async def reverify_answer(
     session: SessionDependency,
     principal: PrincipalDependency,
 ) -> AcceptedTaskResponse:
+    _require_agent_access(principal)
     enforce_csrf(request, principal)
     answer = await session.get(AnswerRecord, answer_id)
     parent = await session.get(AgentTask, answer.task_id) if answer is not None else None
@@ -592,6 +605,7 @@ async def stream_task_events(
     after: int = Query(default=0, ge=0),
     last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
 ) -> EventSourceResponse:
+    _require_agent_access(principal)
     task = await session.get(AgentTask, task_id)
     if task is None or not await _can_access_task(session, task, principal):
         raise HTTPException(status_code=404, detail="Task not found")
@@ -626,6 +640,7 @@ async def list_answer_evidence(
     session: SessionDependency,
     principal: PrincipalDependency,
 ) -> list[Evidence]:
+    _require_agent_access(principal)
     answer = await session.get(AnswerRecord, answer_id)
     task = await session.get(AgentTask, answer.task_id) if answer is not None else None
     if task is None or not await _can_access_task(session, task, principal):
@@ -648,6 +663,7 @@ async def get_evidence(
     session: SessionDependency,
     principal: PrincipalDependency,
 ) -> Evidence:
+    _require_agent_access(principal)
     record = await session.get(EvidenceRecord, evidence_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Evidence not found")
@@ -664,6 +680,7 @@ async def get_answer(
     session: SessionDependency,
     principal: PrincipalDependency,
 ) -> AnswerResponse:
+    _require_agent_access(principal)
     answer = await session.get(AnswerRecord, answer_id)
     if answer is None:
         raise HTTPException(status_code=404, detail="Answer not found")
@@ -779,11 +796,20 @@ async def get_answer(
         next_actions=[clean_product_text(item) for item in answer.next_actions],
         confidence=answer.confidence,
         verification_mode=answer.verification_mode,
+        response_style=task.response_style
+        if task.response_style in {"neutral", "congyu"}
+        else "neutral",
         evidence=evidence,
         claims=claims,
         grounding=grounding,
         performance=performance,
         profile_suggestions=[_profile_attribute_response(item) for item in suggestions],
+        question_offer=await _question_offer_response(
+            session,
+            answer,
+            user_message_id=task.user_message_id,
+            task_status=task.status,
+        ),
         created_at=_as_utc(answer.created_at),
     )
 
@@ -863,6 +889,9 @@ def _derived_task(
         status="queued",
         access_scopes=sorted(principal.visibility_scopes),
         request_mode=mode,
+        response_style=parent.response_style
+        if parent.response_style in {"neutral", "congyu"}
+        else "neutral",
         parent_task_id=parent.id,
         requested_by_subject_id=principal.product_subject_id,
         created_at=now,
@@ -874,6 +903,17 @@ def _require_subject(principal: RequestPrincipal) -> str:
     if principal.product_subject_id is None:
         raise HTTPException(status_code=503, detail="Product identity unavailable")
     return principal.product_subject_id
+
+
+def _require_agent_access(principal: RequestPrincipal) -> None:
+    if principal.authenticated and principal.role == "contributor":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "CONTRIBUTOR_AGENT_ACCESS_DENIED",
+                "message": "贡献者账号仅可浏览问题广场并提交授权回答。",
+            },
+        )
 
 
 def _can_access_conversation(
@@ -928,6 +968,53 @@ def _evidence_response(item: EvidenceRecord) -> Evidence:
         effective_from=(_as_utc(item.effective_from) if item.effective_from else None),
         effective_to=_as_utc(item.effective_to) if item.effective_to else None,
         retrieval_mode=item.retrieval_mode,
+    )
+
+
+async def _question_offer_response(
+    session: AsyncSession,
+    answer: AnswerRecord,
+    *,
+    user_message_id: str,
+    task_status: str,
+) -> QuestionOfferResponse | None:
+    if task_status != "completed":
+        return None
+    reason = answer.question_offer_reason
+    if not reason:
+        return None
+    user_message = await session.get(Message, user_message_id)
+    original = clean_product_text(user_message.content).strip() if user_message else ""
+    question = await session.scalar(
+        select(CommunityQuestion).where(CommunityQuestion.answer_id == answer.id)
+    )
+    details = (
+        "这次回答缺少足够的可核验材料。你可以补充想确认的范围，提交后由管理员审核，"
+        "再交给其他同学协助核对。"
+    )
+    if reason == "grounding_conflicting":
+        details = "检索到的材料存在冲突，暂时无法安全确认；可以把具体年份、学院或通知范围写进问题。"
+    elif reason == "grounding_stale":
+        details = "找到的材料可能已经过期，暂时不能把它当作当前安排；可以补充需要核对的年份或事项。"
+    elif reason == "verification_degraded":
+        details = "最终引用校验没有完成，当前只展示安全边界；可以提交问题，让管理员继续整理。"
+    gap = {
+        "no_evidence": "没有找到足够的关联校园证据。",
+        "low_confidence": "当前回答置信度较低，需要补充范围或权威材料。",
+        "grounding_insufficient": "引用材料不足以覆盖回答中的关键断言。",
+        "grounding_stale": "现有材料可能已经过期，无法确认当前安排。",
+        "grounding_conflicting": "检索到的权威材料存在冲突，需要人工核对。",
+        "verification_degraded": "引用核验未完成，暂时无法给出可靠结论。",
+    }.get(reason, "当前证据不足，需要进一步核对。")
+    return QuestionOfferResponse(
+        reason=reason,
+        title=question.title
+        if question
+        else (f"关于{original[:80]}的具体安排" if original else "需要进一步核对的校园问题"),
+        details=question.details if question else details,
+        evidence_gap=gap,
+        existing_question_id=question.id if question else None,
+        existing_status=question.status if question else None,
     )
 
 

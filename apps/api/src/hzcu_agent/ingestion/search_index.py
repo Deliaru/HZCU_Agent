@@ -32,9 +32,7 @@ async def ensure_source_search_index(database: Database) -> None:
                     """
                 )
             )
-            indexed = await session.scalar(
-                text(f"SELECT 1 FROM {SOURCE_SEARCH_FTS_TABLE} LIMIT 1")
-            )
+            indexed = await session.scalar(text(f"SELECT 1 FROM {SOURCE_SEARCH_FTS_TABLE} LIMIT 1"))
             if indexed is None:
                 await _replace_profiles(session)
             await session.commit()
@@ -59,9 +57,7 @@ async def rebuild_source_search_index(database: Database) -> int:
         async with database.session_factory() as session:
             await session.execute(text(f"DELETE FROM {SOURCE_SEARCH_FTS_TABLE}"))
             await _replace_profiles(session)
-            count = await session.scalar(
-                text(f"SELECT count(*) FROM {SOURCE_SEARCH_FTS_TABLE}")
-            )
+            count = await session.scalar(text(f"SELECT count(*) FROM {SOURCE_SEARCH_FTS_TABLE}"))
             await session.commit()
     return int(count or 0)
 
@@ -89,9 +85,7 @@ async def recreate_source_search_index(database: Database) -> int:
                 )
             )
             await _replace_profiles(session)
-            count = await session.scalar(
-                text(f"SELECT count(*) FROM {SOURCE_SEARCH_FTS_TABLE}")
-            )
+            count = await session.scalar(text(f"SELECT count(*) FROM {SOURCE_SEARCH_FTS_TABLE}"))
             await session.commit()
     return int(count or 0)
 
@@ -103,10 +97,7 @@ async def _replace_profiles(session, *, source_id: str | None = None) -> None:
         bindings["source_id"] = source_id
         source_filter = "WHERE s.id = :source_id"
         await session.execute(
-            text(
-                f"DELETE FROM {SOURCE_SEARCH_FTS_TABLE} "
-                "WHERE source_id = :source_id"
-            ),
+            text(f"DELETE FROM {SOURCE_SEARCH_FTS_TABLE} WHERE source_id = :source_id"),
             bindings,
         )
 
@@ -126,6 +117,7 @@ async def _replace_profiles(session, *, source_id: str | None = None) -> None:
                 ON v.id = r.current_version_id
                 AND v.quality_status NOT IN (
                     'rejected',
+                    'retracted',
                     'excluded_temporal',
                     'excluded_expired_event',
                     'binary_mirrored',

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from hzcu_agent.api.dependencies import enforce_csrf, request_principal, request_session
@@ -24,6 +24,7 @@ async def get_agent_access(
     request: Request,
     principal: PrincipalDependency,
 ) -> AgentAccessResponse:
+    _require_agent_user(principal)
     return AgentAccessResponse(**await _admission(request).access(principal=principal))
 
 
@@ -33,6 +34,7 @@ async def verify_agent_access(
     request: Request,
     principal: PrincipalDependency,
 ) -> AgentVerificationResponse:
+    _require_agent_user(principal)
     enforce_csrf(request, principal)
     try:
         verified_until = await _admission(request).verify_turnstile(
@@ -49,3 +51,14 @@ def _admission(request: Request | None = None):
     if request is None:
         raise RuntimeError("request context unavailable")
     return request.app.state.admission
+
+
+def _require_agent_user(principal: RequestPrincipal) -> None:
+    if principal.authenticated and principal.role == "contributor":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "CONTRIBUTOR_AGENT_ACCESS_DENIED",
+                "message": "贡献者账号仅可浏览问题广场并提交授权回答。",
+            },
+        )

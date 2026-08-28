@@ -21,6 +21,7 @@ from hzcu_agent.schemas import Evidence, ToolError, ToolResult
 
 _EXCLUDED_QUALITY = (
     "rejected",
+    "retracted",
     "excluded_temporal",
     "excluded_expired_event",
     "binary_mirrored",

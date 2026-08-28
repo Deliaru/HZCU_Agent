@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 
-export type AppSection = "agent" | "sources" | "admin";
+export type AppSection = "agent" | "questions" | "sources" | "admin";
 
 type AppChromeProps = {
   section: AppSection;
@@ -38,11 +38,19 @@ const NAVIGATION: Array<{
     icon: MessageSquareText,
   },
   {
+    id: "questions",
+    href: "/questions",
+    label: "问题悬赏版",
+    shortLabel: "Q BOARD",
+    index: "02",
+    icon: MessageSquareText,
+  },
+  {
     id: "sources",
     href: "/sources",
     label: "来源账本",
     shortLabel: "SOURCE",
-    index: "02",
+    index: "03",
     icon: Database,
   },
   {
@@ -50,7 +58,7 @@ const NAVIGATION: Array<{
     href: "/admin",
     label: "系统管理",
     shortLabel: "ADMIN",
-    index: "03",
+    index: "04",
     icon: Gauge,
   },
 ];

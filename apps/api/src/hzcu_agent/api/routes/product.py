@@ -13,6 +13,7 @@ from hzcu_agent.models import (
     AgentTask,
     AnswerFeedback,
     AnswerRecord,
+    CommunityQuestion,
     Conversation,
     Message,
     ProductSubject,
@@ -48,7 +49,23 @@ from hzcu_agent.schemas import (
 )
 from hzcu_agent.text_safety import clean_product_text
 
-router = APIRouter(tags=["product"])
+ContributorPrincipalDependency = Annotated[RequestPrincipal, Depends(request_principal)]
+
+
+def _deny_contributor(principal: ContributorPrincipalDependency) -> None:
+    """Keep local answerer accounts scoped to public board read/answer APIs."""
+
+    if principal.authenticated and principal.role == "contributor":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "CONTRIBUTOR_PRODUCT_ACCESS_DENIED",
+                "message": "贡献者账号仅可浏览问题广场并提交授权回答。",
+            },
+        )
+
+
+router = APIRouter(tags=["product"], dependencies=[Depends(_deny_contributor)])
 SessionDependency = Annotated[AsyncSession, Depends(request_session)]
 PrincipalDependency = Annotated[RequestPrincipal, Depends(request_principal)]
 
@@ -460,6 +477,22 @@ async def merge_visitor_identity(
         item.owner_subject_id = campus_id
         item.owner_user_id = principal.user_id
 
+    # A question submitted before CAS login belongs to the same visitor data
+    # boundary as conversations and feedback.  Move it with the rest of the
+    # product data so a later privacy deletion on the authenticated subject
+    # can correctly delete drafts or anonymize already-public questions.
+    visitor_questions = list(
+        (
+            await session.scalars(
+                select(CommunityQuestion).where(
+                    CommunityQuestion.owner_subject_id == visitor_id
+                )
+            )
+        ).all()
+    )
+    for item in visitor_questions:
+        item.owner_subject_id = campus_id
+
     todos = list(
         (await session.scalars(select(UserTodo).where(UserTodo.subject_id == visitor_id))).all()
     )
@@ -775,6 +808,27 @@ async def _clear_subject_personal_data(
             running_tasks.append(task)
     if running_tasks:
         await asyncio.gather(*running_tasks, return_exceptions=True)
+
+    # Public questions are retained as anonymous community content once they
+    # have been approved. Drafts and rejected submissions remain personal data
+    # and are removed together with the originating conversation.
+    questions = list(
+        (
+            await session.scalars(
+                select(CommunityQuestion).where(CommunityQuestion.owner_subject_id == subject_id)
+            )
+        ).all()
+    )
+    for question in questions:
+        # Once a question has been publicly reviewed, keep the public record
+        # (including a later-hidden question) but sever its personal owner and
+        # source answer.  Draft/rejected questions remain personal data and
+        # are deleted with the originating conversation.
+        if question.published_at is not None or question.status in {"open", "answered"}:
+            question.owner_subject_id = None
+            question.answer_id = None
+        else:
+            await session.delete(question)
 
     await session.execute(delete(Conversation).where(Conversation.owner_subject_id == subject_id))
     await session.execute(delete(UserTodo).where(UserTodo.subject_id == subject_id))

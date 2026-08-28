@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, SecretStr, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 
 
 class CreateConversationRequest(BaseModel):
@@ -73,9 +73,9 @@ class AuthSessionResponse(BaseModel):
     query_access: Literal["direct", "vpn", "unavailable"] = "unavailable"
     query_access_expires_at: datetime | None = None
     credential_handoff_available: bool = False
-    read_only_capability: Literal["campus_notice.read"] = "campus_notice.read"
-    subject_kind: Literal["visitor", "campus", "local_admin"] = "visitor"
-    role: Literal["visitor", "student", "admin"] = "visitor"
+    read_only_capability: Literal["campus_notice.read", "community.answer"] = "campus_notice.read"
+    subject_kind: Literal["visitor", "campus", "local_admin", "contributor"] = "visitor"
+    role: Literal["visitor", "student", "admin", "contributor"] = "visitor"
     visitor_data_available: bool = False
     local_admin_enabled: bool = False
     local_admin_configured: bool = False
@@ -83,6 +83,11 @@ class AuthSessionResponse(BaseModel):
 
 
 class LocalAdminChallengeResponse(BaseModel):
+    challenge: str
+    expires_in_seconds: int
+
+
+class ContributorLoginChallengeResponse(BaseModel):
     challenge: str
     expires_in_seconds: int
 
@@ -112,6 +117,7 @@ class SendMessageRequest(BaseModel):
     message: str = Field(min_length=1, max_length=20_000)
     client_message_id: str | None = Field(default=None, max_length=120)
     profile_overrides: dict[str, Any] = Field(default_factory=dict)
+    response_style: Literal["neutral", "congyu"] = "neutral"
 
 
 class AgentVerificationRequest(BaseModel):
@@ -488,12 +494,160 @@ class AnswerResponse(BaseModel):
     next_actions: list[str]
     confidence: str
     verification_mode: str
+    response_style: Literal["neutral", "congyu"] = "neutral"
     evidence: list[Evidence]
     claims: list[AnswerClaim] = Field(default_factory=list)
     grounding: GroundingSummary | None = None
     performance: AgentPerformance | None = None
     profile_suggestions: list["ProfileAttributeResponse"] = Field(default_factory=list)
+    question_offer: "QuestionOfferResponse | None" = None
     created_at: datetime
+
+
+class QuestionOfferResponse(BaseModel):
+    reason: Literal[
+        "no_evidence",
+        "low_confidence",
+        "grounding_insufficient",
+        "grounding_stale",
+        "grounding_conflicting",
+        "verification_degraded",
+    ]
+    title: str
+    details: str
+    evidence_gap: str
+    existing_question_id: str | None = None
+    existing_status: str | None = None
+
+
+class QuestionCreateRequest(BaseModel):
+    title: str = Field(min_length=2, max_length=240)
+    details: str = Field(min_length=2, max_length=6000)
+
+
+class QuestionSummaryResponse(BaseModel):
+    question_id: str
+    title: str
+    details: str
+    status: Literal["pending_review", "open", "answered", "rejected", "hidden"]
+    answer_count: int = 0
+    waiting_seconds: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+
+class CommunityAnswerResponse(BaseModel):
+    answer_id: str
+    question_id: str
+    answer_markdown: str
+    display_name: str
+    unit: str | None = None
+    status: Literal["visible", "hidden"]
+    knowledge_review_state: str
+    can_edit: bool = False
+    created_at: datetime
+    updated_at: datetime
+
+
+class QuestionDetailResponse(QuestionSummaryResponse):
+    evidence_gap: str = ""
+    answers: list[CommunityAnswerResponse] = Field(default_factory=list)
+
+
+class QuestionReviewRequest(BaseModel):
+    status: Literal["open", "rejected", "hidden"]
+    review_note: str | None = Field(default=None, max_length=1000)
+
+
+class CommunityAnswerCreateRequest(BaseModel):
+    answer_markdown: str = Field(min_length=2, max_length=12000)
+
+
+class CommunityAnswerUpdateRequest(BaseModel):
+    answer_markdown: str = Field(min_length=2, max_length=12000)
+
+
+class CommunityAnswerModerationRequest(BaseModel):
+    status: Literal["visible", "hidden"]
+
+
+class ContributorCreateRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=160, pattern=r"^[^\s\x00-\x1f]+$")
+    password: SecretStr = Field(min_length=6, max_length=256)
+    public_name: str = Field(min_length=1, max_length=120)
+    unit: str | None = Field(default=None, max_length=200)
+
+
+class ContributorUpdateRequest(BaseModel):
+    public_name: str | None = Field(default=None, min_length=1, max_length=120)
+    unit: str | None = Field(default=None, max_length=200)
+    status: Literal["active", "disabled"] | None = None
+    password: SecretStr | None = Field(default=None, min_length=6, max_length=256)
+
+
+class ContributorResponse(BaseModel):
+    contributor_id: str
+    username: str
+    public_name: str
+    unit: str | None
+    status: Literal["active", "disabled"]
+    created_at: datetime
+    updated_at: datetime
+    last_login_at: datetime | None = None
+
+
+class KnowledgeEntryRequest(BaseModel):
+    question_id: str | None = Field(default=None, max_length=64)
+    title: str = Field(min_length=2, max_length=240)
+    canonical_question: str = Field(min_length=2, max_length=2000)
+    answer_markdown: str = Field(min_length=2, max_length=20000)
+    category: str = Field(default="校园综合", min_length=1, max_length=120)
+    alternative_phrasings: list[str] = Field(default_factory=list, max_length=12)
+    applicable_scope: str = Field(default="", max_length=2000)
+    maintainer_unit: str = Field(default="", max_length=200)
+    basis_note: str = Field(default="", max_length=4000)
+    validity: Literal["stable", "time_bounded"] = "stable"
+    effective_from: datetime | None = None
+    effective_to: datetime | None = None
+    visibility: Literal["public", "campus"] = "public"
+    origin_answer_ids: list[str] = Field(default_factory=list, max_length=20)
+
+    @field_validator("alternative_phrasings")
+    @classmethod
+    def normalize_alternatives(cls, values: list[str]) -> list[str]:
+        return list(dict.fromkeys(value.strip()[:240] for value in values if value.strip()))
+
+    @model_validator(mode="after")
+    def validate_validity_window(self) -> "KnowledgeEntryRequest":
+        if self.validity == "time_bounded" and (
+            self.effective_from is None or self.effective_to is None
+        ):
+            raise ValueError("time_bounded 条目必须填写生效和失效日期")
+        if self.effective_from and self.effective_to and self.effective_to <= self.effective_from:
+            raise ValueError("失效日期必须晚于生效日期")
+        return self
+
+
+class KnowledgeEntryResponse(KnowledgeEntryRequest):
+    entry_id: str
+    question_id: str | None = None
+    status: Literal["draft", "published", "retired"]
+    published_source_id: str | None = None
+    published_resource_id: str | None = None
+    published_version_id: str | None = None
+    content_hash: str | None = None
+    created_by_user_id: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    published_at: datetime | None = None
+
+
+class KnowledgeOptimizationResponse(BaseModel):
+    entry_id: str
+    suggested_title: str
+    suggested_category: str
+    suggested_phrasings: list[str]
+    scope_risk: str
 
 
 ProfileAttributeKey = Literal[

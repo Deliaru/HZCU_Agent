@@ -10,6 +10,7 @@ import {
   Gauge,
   KeyRound,
   LoaderCircle,
+  LogOut,
   Search,
   MessageSquareWarning,
   Network,
@@ -28,6 +29,7 @@ import {
   getAdminOverview,
   getAdminTaskHealth,
   getAuthSession,
+  logoutCampusSession,
   getSourceAlerts,
   updateAdminAgentPolicy,
   updateAdminModelConfiguration,
@@ -44,9 +46,10 @@ import type {
 } from "@/lib/api";
 
 import { AppChrome } from "./app-chrome";
+import { KnowledgeGovernancePanel } from "./knowledge-governance";
 
 type TaskHealth = Awaited<ReturnType<typeof getAdminTaskHealth>>["items"];
-type AdminView = "model" | "agent" | "telemetry";
+type AdminView = "model" | "agent" | "telemetry" | "knowledge";
 type AccessState = "loading" | "redirecting" | "admin" | "denied" | "failed";
 type ConfigDraft = {
   protocol: "openai_responses" | "anthropic_messages";
@@ -130,6 +133,7 @@ export function AdminConsole() {
   const [apiKey, setApiKey] = useState("");
   const [saving, setSaving] = useState(false);
   const [savingAgentPolicy, setSavingAgentPolicy] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const [notice, setNotice] = useState<string>();
   const [error, setError] = useState<string>();
 
@@ -229,6 +233,19 @@ export function AdminConsole() {
     }
   }
 
+  async function logout() {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    setError(undefined);
+    try {
+      await logoutCampusSession();
+      window.location.assign("/login?return_to=/admin");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "退出登录失败");
+      setLoggingOut(false);
+    }
+  }
+
   if (access === "loading" || access === "redirecting") {
     return (
       <main className="admin-entry-loading">
@@ -286,6 +303,14 @@ export function AdminConsole() {
           <span className="admin-role-mark">
             <ShieldCheck size={15} /> SERVER ADMIN
           </span>
+          <button
+            className="admin-logout-action"
+            type="button"
+            onClick={() => void logout()}
+            disabled={loggingOut}
+          >
+            <LogOut size={14} /> {loggingOut ? "退出中…" : "退出登录"}
+          </button>
         </>
       }
     >
@@ -328,6 +353,13 @@ export function AdminConsole() {
             onClick={() => setView("telemetry")}
           >
             <span>03</span><Activity size={17} /> 运行监测
+          </button>
+          <button
+            type="button"
+            className={view === "knowledge" ? "active" : ""}
+            onClick={() => setView("knowledge")}
+          >
+            <span>04</span><MessageSquareWarning size={17} /> 知识治理
           </button>
         </nav>
 
@@ -523,6 +555,7 @@ export function AdminConsole() {
             onSubmit={saveAgentPolicy}
           />
         ) : null}
+        {view === "knowledge" ? <KnowledgeGovernancePanel /> : null}
       </section>
     </AppChrome>
   );

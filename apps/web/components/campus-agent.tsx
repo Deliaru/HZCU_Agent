@@ -68,6 +68,7 @@ import { ConversationRail } from "./conversation-rail";
 import { EvidenceDesk } from "./evidence-desk";
 import { IdentityControl } from "./identity-control";
 import { MySpacePanel, OnboardingPanel } from "./product-panels";
+import { QuestionOfferPanel } from "./question-offer";
 import { useTheme } from "./theme-provider";
 
 type Stage =
@@ -263,7 +264,7 @@ function describeTaskFailure(errorCode: string | null | undefined, fallback?: st
   }
 }
 
-function useCampusAgentController() {
+function useCampusAgentController(theme: "minimal" | "character") {
   const [conversationId, setConversationId] = useState<string>();
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -345,6 +346,8 @@ function useCampusAgentController() {
     async (answer: AgentAnswer) => {
       const normalizedAnswer = {
         ...answer,
+        response_style: answer.response_style === "congyu" ? ("congyu" as const) : ("neutral" as const),
+        question_offer: answer.question_offer ?? null,
         evidence: normalizeEvidenceList(answer.evidence),
       };
       setMessages((current) => {
@@ -933,7 +936,12 @@ function useCampusAgentController() {
     try {
       const id = conversationId ?? (await createConversation());
       setConversationId(id);
-      const task = await sendMessage(id, normalized, optimisticId);
+      const task = await sendMessage(
+        id,
+        normalized,
+        optimisticId,
+        theme === "character" ? "congyu" : "neutral",
+      );
       openTaskStream(task.stream_url, task.task_id, task.queue_position);
       await refreshHistory();
       void refreshAgentAccess();
@@ -1237,7 +1245,7 @@ export function CampusAgent() {
     onSubmit,
     copyTraceId,
     handlePersonalDataDeleted,
-  } = useCampusAgentController();
+  } = useCampusAgentController(theme ?? "minimal");
 
   if (theme === "character") {
     return (
@@ -1337,7 +1345,14 @@ export function CampusAgent() {
           <Menu size={20} />
         </button>
       }
-      utilities={null}
+      utilities={
+        <IdentityControl
+          session={authSession}
+          busy={authBusy}
+          onLogout={() => void handleLogout()}
+          onAuthenticated={() => void handleAuthenticated()}
+        />
+      }
     >
 
       <AgentAccessPanel
@@ -1567,6 +1582,12 @@ export function CampusAgent() {
                       {withCitationLinks(message.answer.answer_markdown)}
                     </ReactMarkdown>
                   </div>
+                  {message.answer.question_offer && (
+                    <QuestionOfferPanel
+                      answerId={message.answer.answer_id}
+                      offer={message.answer.question_offer}
+                    />
+                  )}
                   {message.answer.assumptions.length > 0 && (
                     <div className="answer-uncertainty">
                       <MessageCircleWarning size={15} />

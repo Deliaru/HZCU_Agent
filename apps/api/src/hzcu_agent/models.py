@@ -318,6 +318,7 @@ class AgentTask(Base):
     answer_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     access_scopes: Mapped[list[str]] = mapped_column(JSON, default=lambda: ["public"])
     request_mode: Mapped[str] = mapped_column(String(32), default="normal")
+    response_style: Mapped[str] = mapped_column(String(24), default="neutral")
     parent_task_id: Mapped[str | None] = mapped_column(
         ForeignKey("agent_tasks.id", ondelete="SET NULL"),
         nullable=True,
@@ -355,8 +356,139 @@ class AnswerRecord(Base):
     next_actions: Mapped[list[str]] = mapped_column(JSON, default=list)
     confidence: Mapped[str] = mapped_column(String(24), default="medium")
     verification_mode: Mapped[str] = mapped_column(String(32), default="unknown")
+    question_offer_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
     model_provider: Mapped[str] = mapped_column(String(40))
     model_name: Mapped[str] = mapped_column(String(120))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class LocalContributorCredential(Base):
+    """Administrator-managed answerer account; credentials never leave the server."""
+
+    __tablename__ = "local_contributor_credentials"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("campus_users.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    username: Mapped[str] = mapped_column(String(160), unique=True, index=True)
+    public_name: Mapped[str] = mapped_column(String(120))
+    unit: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    password_hash: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(24), default="active")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class CommunityQuestion(Base):
+    """A question explicitly created from an eligible low-grounding answer."""
+
+    __tablename__ = "community_questions"
+    __table_args__ = (
+        UniqueConstraint("answer_id", name="uq_community_question_answer"),
+        Index("ix_community_questions_status_created", "status", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    answer_id: Mapped[str | None] = mapped_column(
+        ForeignKey("answers.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    owner_subject_id: Mapped[str | None] = mapped_column(
+        ForeignKey("product_subjects.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    title: Mapped[str] = mapped_column(String(240))
+    details: Mapped[str] = mapped_column(Text)
+    evidence_gap: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(24), default="pending_review")
+    review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("campus_users.id", ondelete="SET NULL"), nullable=True
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class CommunityAnswer(Base):
+    """A visible answer from an administrator-managed contributor."""
+
+    __tablename__ = "community_answers"
+    __table_args__ = (
+        UniqueConstraint(
+            "question_id", "contributor_user_id", name="uq_community_answer_question_contributor"
+        ),
+        Index("ix_community_answers_question_status", "question_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    question_id: Mapped[str] = mapped_column(
+        ForeignKey("community_questions.id", ondelete="CASCADE"), index=True
+    )
+    contributor_user_id: Mapped[str] = mapped_column(
+        ForeignKey("campus_users.id", ondelete="CASCADE"), index=True
+    )
+    answer_markdown: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(24), default="visible")
+    knowledge_review_state: Mapped[str] = mapped_column(String(32), default="not_reviewed")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class KnowledgeEntry(Base):
+    """Human-governed answer that may be published into the campus mirror."""
+
+    __tablename__ = "knowledge_entries"
+    __table_args__ = (
+        UniqueConstraint("question_id", name="uq_knowledge_entry_question"),
+        Index("ix_knowledge_entries_status_visibility", "status", "visibility"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    question_id: Mapped[str | None] = mapped_column(
+        ForeignKey("community_questions.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    title: Mapped[str] = mapped_column(String(240))
+    canonical_question: Mapped[str] = mapped_column(Text)
+    answer_markdown: Mapped[str] = mapped_column(Text)
+    category: Mapped[str] = mapped_column(String(120), default="校园综合")
+    alternative_phrasings: Mapped[list[str]] = mapped_column(JSON, default=list)
+    applicable_scope: Mapped[str] = mapped_column(Text, default="")
+    maintainer_unit: Mapped[str] = mapped_column(String(200), default="")
+    basis_note: Mapped[str] = mapped_column(Text, default="")
+    validity: Mapped[str] = mapped_column(String(24), default="stable")
+    effective_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    effective_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    visibility: Mapped[str] = mapped_column(String(24), default="public")
+    status: Mapped[str] = mapped_column(String(24), default="draft")
+    published_source_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    published_resource_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    published_version_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("campus_users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class KnowledgeEntryOrigin(Base):
+    __tablename__ = "knowledge_entry_origins"
+    __table_args__ = (
+        UniqueConstraint("knowledge_entry_id", "community_answer_id", name="uq_knowledge_origin"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    knowledge_entry_id: Mapped[str] = mapped_column(
+        ForeignKey("knowledge_entries.id", ondelete="CASCADE"), index=True
+    )
+    community_answer_id: Mapped[str | None] = mapped_column(
+        ForeignKey("community_answers.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    origin_kind: Mapped[str] = mapped_column(String(32), default="manual")
+    content_hash: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 

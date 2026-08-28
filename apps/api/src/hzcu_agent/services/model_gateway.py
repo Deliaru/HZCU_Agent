@@ -17,6 +17,7 @@ from hzcu_agent.prompts import (
     ANSWER_VERIFIER_PROMPT,
     CITATION_REPAIR_PROMPT,
     INVESTIGATION_REVIEW_PROMPT,
+    KNOWLEDGE_OPTIMIZER_PROMPT,
     PLANNER_PROMPT,
     PREPARED_INVESTIGATION_PROMPT,
     SEMANTIC_PERCEPTION_PROMPT,
@@ -35,6 +36,7 @@ from hzcu_agent.schemas import (
     InvestigationPlan,
     InvestigationReview,
     InvestigationStep,
+    KnowledgeOptimizationResponse,
     PreparedInvestigation,
     RiskAssessment,
     SemanticDossier,
@@ -142,6 +144,7 @@ class ModelGateway(Protocol):
         tool_catalog: list[dict[str, Any]],
         can_research_more: bool,
         current_time: datetime,
+        response_style: str = "neutral",
     ) -> GroundedAnswerComposition: ...
 
     async def verify(
@@ -153,6 +156,7 @@ class ModelGateway(Protocol):
         evidence: list[Evidence],
         composition: GroundedAnswerComposition,
         current_time: datetime,
+        response_style: str = "neutral",
     ) -> AnswerVerification: ...
 
     async def repair_citations(
@@ -163,7 +167,27 @@ class ModelGateway(Protocol):
         evidence: list[Evidence],
         findings: list[VerificationFinding],
         current_time: datetime,
+        response_style: str = "neutral",
     ) -> AnswerRevision: ...
+
+    async def optimize_knowledge(
+        self,
+        *,
+        entry_id: str,
+        title: str,
+        canonical_question: str,
+        answer_markdown: str,
+        category: str,
+        alternative_phrasings: list[str],
+        applicable_scope: str,
+        maintainer_unit: str,
+        basis_note: str,
+        validity: str,
+        effective_from: datetime | None,
+        effective_to: datetime | None,
+        visibility: str,
+        current_time: datetime,
+    ) -> KnowledgeOptimizationResponse: ...
 
     async def close(self) -> None: ...
 
@@ -308,6 +332,7 @@ class DemoModelGateway:
         tool_catalog: list[dict[str, Any]],
         can_research_more: bool,
         current_time: datetime,
+        response_style: str = "neutral",
     ) -> GroundedAnswerComposition:
         _record_demo_model_call("compose")
         del (
@@ -322,6 +347,13 @@ class DemoModelGateway:
         if evidence:
             result_lines = []
             claims = []
+            evidence_label = (
+                "人工核验资料页面"
+                if all(item.authority_level == "curated" for item in evidence)
+                else "官方与人工核验资料页面"
+                if any(item.authority_level == "curated" for item in evidence)
+                else "官方页面"
+            )
             for index, item in enumerate(evidence, start=1):
                 excerpt = item.excerpt.replace("\n", " ").strip()
                 result_lines.append(f"{index}. **{item.title}**：{excerpt[:180]}… [来源{index}]")
@@ -346,7 +378,7 @@ class DemoModelGateway:
                 answer=AgentAnswer(
                     headline="已完成校园镜像检索",
                     answer_markdown=(
-                        f"我围绕“{original_query}”找到了以下官方页面：\n\n"
+                        f"{_style_opening(response_style)}我围绕“{original_query}”找到了以下{evidence_label}：\n\n"
                         + "\n\n".join(result_lines)
                         + "\n\n当前运行的是**无模型密钥演示模式**：实时检索、证据链、"
                         "任务流和界面均真实运行，但尚未调用大模型完成语义归纳与个性化建议。"
@@ -365,9 +397,13 @@ class DemoModelGateway:
         error_note = "；".join(error.message for error in tool_errors)
         return GroundedAnswerComposition(
             answer=AgentAnswer(
-                headline="这次没有取得可核验的官网材料",
+                headline=(
+                    "这次还没查到能确认的官网材料"
+                    if response_style == "congyu"
+                    else "这次没有取得可核验的官网材料"
+                ),
                 answer_markdown=(
-                    f"我尝试围绕“{original_query}”检索校园官网，但没有取得可用证据。"
+                    f"{_style_opening(response_style)}我尝试围绕“{original_query}”检索校园官网，但没有取得可用证据。"
                     + (f"\n\n工具反馈：{error_note}" if error_note else "")
                     + "\n\n当前是无模型密钥演示模式，我不会在缺少证据时补写校园事实。"
                 ),
@@ -390,6 +426,7 @@ class DemoModelGateway:
         evidence: list[Evidence],
         composition: GroundedAnswerComposition,
         current_time: datetime,
+        response_style: str = "neutral",
     ) -> AnswerVerification:
         _record_demo_model_call("verify")
         del (
@@ -399,6 +436,7 @@ class DemoModelGateway:
             evidence,
             composition,
             current_time,
+            response_style,
         )
         return AnswerVerification(
             verdict="passed",
@@ -413,12 +451,51 @@ class DemoModelGateway:
         evidence: list[Evidence],
         findings: list[VerificationFinding],
         current_time: datetime,
+        response_style: str = "neutral",
     ) -> AnswerRevision:
         _record_demo_model_call("repair_citations")
-        del original_query, answer, evidence, findings, current_time
+        del original_query, answer, evidence, findings, current_time, response_style
         # Demo mode cannot judge semantic support, so it never rebinds citations;
         # the coordinator falls through to the transparent degraded answer.
         return AnswerRevision()
+
+    async def optimize_knowledge(
+        self,
+        *,
+        entry_id: str,
+        title: str,
+        canonical_question: str,
+        answer_markdown: str,
+        category: str,
+        alternative_phrasings: list[str],
+        applicable_scope: str,
+        maintainer_unit: str,
+        basis_note: str,
+        validity: str,
+        effective_from: datetime | None,
+        effective_to: datetime | None,
+        visibility: str,
+        current_time: datetime,
+    ) -> KnowledgeOptimizationResponse:
+        _record_demo_model_call("optimize_knowledge")
+        del answer_markdown, applicable_scope, maintainer_unit, basis_note, current_time
+        suggested_title = title.strip() or canonical_question.strip()[:120]
+        suggested_category = category.strip() or "校园综合"
+        phrases = list(dict.fromkeys([canonical_question.strip(), *alternative_phrasings]))
+        phrases = [phrase[:240] for phrase in phrases if phrase][:12]
+        if validity == "time_bounded":
+            risk = "时间限定条目：回答时必须同时核对生效、失效日期，不能推广到其他年份。"
+        elif visibility == "campus":
+            risk = "校园可见条目：只对具备 campus 可见范围的主体召回。"
+        else:
+            risk = "未发现额外范围风险。"
+        return KnowledgeOptimizationResponse(
+            entry_id=entry_id,
+            suggested_title=suggested_title,
+            suggested_category=suggested_category,
+            suggested_phrasings=phrases,
+            scope_risk=risk,
+        )
 
     async def close(self) -> None:
         return None
@@ -583,6 +660,7 @@ class OpenAIModelGateway:
         tool_catalog: list[dict[str, Any]],
         can_research_more: bool,
         current_time: datetime,
+        response_style: str = "neutral",
     ) -> GroundedAnswerComposition:
         payload = {
             "current_time": current_time.isoformat(),
@@ -598,11 +676,12 @@ class OpenAIModelGateway:
             "tool_observations": tool_observations,
             "tool_catalog": tool_catalog,
             "can_research_more": can_research_more,
+            "response_style": response_style,
         }
         return await self._parse(
             role="compose",
             model=self.agent_model,
-            instructions=ANSWER_COMPOSER_PROMPT,
+            instructions=f"{ANSWER_COMPOSER_PROMPT}\n\n{_style_prompt(response_style)}",
             payload=payload,
             schema=GroundedAnswerComposition,
         )
@@ -616,6 +695,7 @@ class OpenAIModelGateway:
         evidence: list[Evidence],
         composition: GroundedAnswerComposition,
         current_time: datetime,
+        response_style: str = "neutral",
     ) -> AnswerVerification:
         payload = {
             "current_time": current_time.isoformat(),
@@ -624,11 +704,12 @@ class OpenAIModelGateway:
             "semantic_dossier": dossier.model_dump(mode="json"),
             "evidence": [item.model_dump(mode="json") for item in evidence],
             "candidate_composition": composition.model_dump(mode="json"),
+            "response_style": response_style,
         }
         return await self._parse(
             role="verify",
             model=self._utility_model,
-            instructions=ANSWER_VERIFIER_PROMPT,
+            instructions=f"{ANSWER_VERIFIER_PROMPT}\n\n{_style_prompt(response_style)}",
             payload=payload,
             schema=AnswerVerification,
         )
@@ -641,12 +722,14 @@ class OpenAIModelGateway:
         evidence: list[Evidence],
         findings: list[VerificationFinding],
         current_time: datetime,
+        response_style: str = "neutral",
     ) -> AnswerRevision:
         payload = {
             "current_time": current_time.isoformat(),
             "original_query": original_query,
             "failed_findings": [item.model_dump(mode="json") for item in findings],
             "candidate_answer": answer.model_dump(mode="json"),
+            "response_style": response_style,
             # Keep enough of any model-selected full document for citation
             # repair without applying topic-specific excerpt rules.
             "evidence_workspace": [
@@ -663,9 +746,51 @@ class OpenAIModelGateway:
         return await self._parse(
             role="repair_citations",
             model=self._utility_model,
-            instructions=CITATION_REPAIR_PROMPT,
+            instructions=f"{CITATION_REPAIR_PROMPT}\n\n{_style_prompt(response_style)}",
             payload=payload,
             schema=AnswerRevision,
+        )
+
+    async def optimize_knowledge(
+        self,
+        *,
+        entry_id: str,
+        title: str,
+        canonical_question: str,
+        answer_markdown: str,
+        category: str,
+        alternative_phrasings: list[str],
+        applicable_scope: str,
+        maintainer_unit: str,
+        basis_note: str,
+        validity: str,
+        effective_from: datetime | None,
+        effective_to: datetime | None,
+        visibility: str,
+        current_time: datetime,
+    ) -> KnowledgeOptimizationResponse:
+        payload = {
+            "current_time": current_time.isoformat(),
+            "entry_id": entry_id,
+            "title": title,
+            "canonical_question": canonical_question,
+            "answer_markdown": answer_markdown,
+            "category": category,
+            "alternative_phrasings": alternative_phrasings,
+            "applicable_scope": applicable_scope,
+            "maintainer_unit": maintainer_unit,
+            "basis_note": basis_note,
+            "validity": validity,
+            "effective_from": effective_from.isoformat() if effective_from else None,
+            "effective_to": effective_to.isoformat() if effective_to else None,
+            "visibility": visibility,
+        }
+        return await self._parse(
+            role="optimize_knowledge",
+            model=self._utility_model,
+            instructions=KNOWLEDGE_OPTIMIZER_PROMPT,
+            payload=payload,
+            schema=KnowledgeOptimizationResponse,
         )
 
     async def _parse(
@@ -679,7 +804,15 @@ class OpenAIModelGateway:
     ):
         reasoning_effort = (
             self._utility_reasoning_effort
-            if role in {"prepare", "understand", "plan", "review", "repair_citations"}
+            if role
+            in {
+                "prepare",
+                "understand",
+                "plan",
+                "review",
+                "repair_citations",
+                "optimize_knowledge",
+            }
             else self._reasoning_effort
         )
         request = {
@@ -759,6 +892,7 @@ class OpenAIModelGateway:
                 trace.mark_unmeasurable(span)
                 return await self._model_call(role, lambda: self._client.responses.parse(**request))
             try:
+
                 async def stream_request():
                     async with self._client.responses.stream(**request) as stream:
                         async for event in stream:
@@ -843,9 +977,7 @@ class OpenAIModelGateway:
             {
                 "original_input": original_input,
                 "invalid_output": previous_output[:200_000],
-                "validation_summary": _public_validation_summary(
-                    validation_details or {}
-                ),
+                "validation_summary": _public_validation_summary(validation_details or {}),
             },
             ensure_ascii=False,
         )
@@ -1226,6 +1358,9 @@ class ManagedModelGateway:
     async def repair_citations(self, **kwargs):
         return await self._gateway.repair_citations(**kwargs)
 
+    async def optimize_knowledge(self, **kwargs):
+        return await self._gateway.optimize_knowledge(**kwargs)
+
     async def close(self) -> None:
         gateways = [self._gateway, *self._retired]
         self._retired = []
@@ -1405,3 +1540,21 @@ def _record_demo_model_call(name: str, *, nested: bool = False) -> None:
     span = trace.start_span("model", name)
     trace.mark_first_event(span)
     trace.finish_span(span)
+
+
+def _style_prompt(response_style: str) -> str:
+    if response_style != "congyu":
+        return (
+            "回答风格：保持中性、清楚、直接。不要添加角色口癖，不能牺牲事实准确性、"
+            "引用、日期、数字或不确定性。"
+        )
+    return (
+        "回答风格：使用琮羽口吻——清爽、聪明、亲近、利索，允许偶尔自然地说‘嗯……查到了’"
+        "或‘我给你理一下’，但每次回答点到为止。禁止客服腔、幼态撒娇、颜文字、过量口癖、"
+        "舞台动作、虚构亲历和角色扮演。校名、政策名称、数字、日期、引用和不确定性必须原样"
+        "保持，不得为了角色感改写事实。"
+    )
+
+
+def _style_opening(response_style: str) -> str:
+    return "嗯……查到了。" if response_style == "congyu" else ""

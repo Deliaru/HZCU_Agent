@@ -79,6 +79,10 @@
   color: var(--gray-300);
 }
 
+.identity-logout-label {
+  display: none;
+}
+
 .identity-login {
   transition:
     background var(--transition-fast),

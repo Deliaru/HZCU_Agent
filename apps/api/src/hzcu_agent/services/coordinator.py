@@ -243,9 +243,7 @@ class AgentCoordinator:
                         **exc.details,
                     },
                 )
-                prepared = self._fallback_prepared_investigation(
-                    task_context["original_query"]
-                )
+                prepared = self._fallback_prepared_investigation(task_context["original_query"])
             dossier = self._with_answer_shape(
                 prepared.dossier,
                 task_context["original_query"],
@@ -429,12 +427,14 @@ class AgentCoordinator:
                             and tool_call_count < self._settings.max_tool_calls
                         ),
                         current_time=utc_now(),
+                        response_style=task_context["response_style"],
                     )
                 except AgentModelBudgetExceeded:
                     composition = GroundedAnswerComposition(
                         answer=self._safe_grounding_fallback(
                             original_query=task_context["original_query"],
                             evidence=answer_evidence,
+                            response_style=task_context["response_style"],
                         ),
                         assessment=GroundingAssessment(
                             status="conditional",
@@ -456,6 +456,7 @@ class AgentCoordinator:
                         answer=self._safe_grounding_fallback(
                             original_query=task_context["original_query"],
                             evidence=answer_evidence,
+                            response_style=task_context["response_style"],
                         ),
                         assessment=GroundingAssessment(
                             status="conditional",
@@ -500,7 +501,7 @@ class AgentCoordinator:
 
             if dossier.signals.domain_scope == "out_of_scope":
                 composition = GroundedAnswerComposition(
-                    answer=self._scope_refusal_answer(),
+                    answer=self._scope_refusal_answer(task_context["response_style"]),
                     assessment=GroundingAssessment(
                         status="unauthorized",
                         summary="本服务仅处理浙大城市学院相关的官方信息查询。",
@@ -513,6 +514,7 @@ class AgentCoordinator:
             composed_answer = composition.answer or self._safe_grounding_fallback(
                 original_query=task_context["original_query"],
                 evidence=evidence,
+                response_style=task_context["response_style"],
             )
             if dossier.signals.domain_scope == "ambiguous" and (
                 not evidence
@@ -521,7 +523,7 @@ class AgentCoordinator:
                     evidence,
                 )
             ):
-                answer = self._scope_refusal_answer()
+                answer = self._scope_refusal_answer(task_context["response_style"])
             else:
                 answer = self._calibrate_answer(composed_answer, evidence)
             retrieval_coverage_risk = self._retrieval_coverage_risk(tool_observations)
@@ -558,6 +560,7 @@ class AgentCoordinator:
                         evidence=evidence,
                         composition=composition,
                         current_time=utc_now(),
+                        response_style=task_context["response_style"],
                     )
                 except AgentModelBudgetExceeded:
                     verification = AnswerVerification(
@@ -595,6 +598,7 @@ class AgentCoordinator:
                         answer = self._safe_grounding_fallback(
                             original_query=task_context["original_query"],
                             evidence=evidence,
+                            response_style=task_context["response_style"],
                         )
                     else:
                         answer = self._calibrate_answer(applied.answer, evidence)
@@ -602,6 +606,7 @@ class AgentCoordinator:
                     answer = self._safe_grounding_fallback(
                         original_query=task_context["original_query"],
                         evidence=evidence,
+                        response_style=task_context["response_style"],
                     )
 
             live_tools_used = {
@@ -632,6 +637,7 @@ class AgentCoordinator:
                     answer=answer,
                     evidence=evidence,
                     structural=final_structural,
+                    response_style=task_context["response_style"],
                 )
                 semantic_findings = [*semantic_findings, *repair_findings]
                 if repaired:
@@ -648,6 +654,7 @@ class AgentCoordinator:
                     answer = self._safe_grounding_fallback(
                         original_query=task_context["original_query"],
                         evidence=evidence,
+                        response_style=task_context["response_style"],
                     )
                     final_structural = self._citation_verifier.verify(answer, evidence)
                     verification = verification.model_copy(
@@ -676,6 +683,13 @@ class AgentCoordinator:
                 grounding,
                 original_query=task_context["original_query"],
                 product_subject_id=task_context["product_subject_id"],
+                response_style=task_context["response_style"],
+                question_offer_reason=_question_offer_reason(
+                    domain_scope=dossier.signals.domain_scope,
+                    answer=answer,
+                    evidence=evidence,
+                    grounding=grounding,
+                ),
             )
             if answer_payload is None:
                 return
@@ -780,6 +794,7 @@ class AgentCoordinator:
         answer: AgentAnswer,
         evidence: list[Evidence],
         structural: StructuralGroundingResult,
+        response_style: str = "neutral",
     ) -> tuple[AgentAnswer, StructuralGroundingResult, list[VerificationFinding], bool]:
         """Two-stage citation repair before any full degradation.
 
@@ -812,6 +827,7 @@ class AgentCoordinator:
                 evidence=evidence,
                 findings=structural.findings,
                 current_time=utc_now(),
+                response_style=response_style,
             )
         except Exception:
             logger.exception(
@@ -919,6 +935,22 @@ class AgentCoordinator:
                     "verification_mode": "no_campus_evidence",
                 }
             )
+        if all(item.authority_level == "curated" for item in evidence):
+            marker = "依据类型：Agent 人工核验资料（非学校官方材料）。"
+            answer_markdown = answer.answer_markdown
+            if marker not in answer_markdown:
+                answer_markdown = f"{marker}\n\n{answer_markdown}"
+            capped_confidence = answer.confidence
+            if answer.verification_mode in {"no_campus_evidence", "degraded"}:
+                capped_confidence = "low"
+            elif capped_confidence == "high":
+                capped_confidence = "medium"
+            return answer.model_copy(
+                update={
+                    "answer_markdown": answer_markdown,
+                    "confidence": capped_confidence,
+                }
+            )
         if answer.verification_mode in {"no_campus_evidence", "degraded"}:
             return answer.model_copy(update={"confidence": "low"})
         has_live_evidence = any(
@@ -979,9 +1011,7 @@ class AgentCoordinator:
                     can_run_in_parallel=True,
                 )
             )
-        memory_steps = [
-            step for step in normalized if step.tool == "search_campus_memory"
-        ]
+        memory_steps = [step for step in normalized if step.tool == "search_campus_memory"]
         if len(memory_steps) != 1 or not (original_query or "").strip():
             return normalized
 
@@ -1055,8 +1085,7 @@ class AgentCoordinator:
             for size in (4, 3, 2):
                 if len(value) >= size:
                     query_terms.extend(
-                        value[index : index + size]
-                        for index in range(len(value) - size + 1)
+                        value[index : index + size] for index in range(len(value) - size + 1)
                     )
         query_terms = [
             value
@@ -1178,11 +1207,7 @@ class AgentCoordinator:
         else:
             return dossier
         return dossier.model_copy(
-            update={
-                "signals": dossier.signals.model_copy(
-                    update={"answer_shape": answer_shape}
-                )
-            }
+            update={"signals": dossier.signals.model_copy(update={"answer_shape": answer_shape})}
         )
 
     @staticmethod
@@ -1256,11 +1281,12 @@ class AgentCoordinator:
         )
 
     @staticmethod
-    def _scope_refusal_answer() -> AgentAnswer:
+    def _scope_refusal_answer(response_style: str = "neutral") -> AgentAnswer:
         return AgentAnswer(
-            headline="仅处理校园官方信息",
+            headline="只处理校园官方信息" if response_style == "congyu" else "仅处理校园官方信息",
             answer_markdown=(
-                "我只能帮助查询、解释和核对浙大城市学院相关的官方信息。"
+                ("嗯，这一类我不接。" if response_style == "congyu" else "")
+                + "我只能帮助查询、解释和核对浙大城市学院相关的官方信息。"
                 "请换成学校通知、校历、课程、专业、招生或校园服务等具体问题。"
             ),
             assumptions=[],
@@ -1393,6 +1419,9 @@ class AgentCoordinator:
                 "actor_user_id": conversation.owner_user_id,
                 "product_subject_id": task.requested_by_subject_id,
                 "request_mode": task.request_mode,
+                "response_style": task.response_style
+                if task.response_style in {"neutral", "congyu"}
+                else "neutral",
                 "conversation_context": [
                     {"role": message.role, "content": message.content} for message in messages
                 ],
@@ -1434,6 +1463,8 @@ class AgentCoordinator:
         *,
         original_query: str,
         product_subject_id: str | None,
+        response_style: str = "neutral",
+        question_offer_reason: str | None = None,
     ) -> dict[str, Any] | None:
         answer_id = new_id("ans")
         created_at = utc_now()
@@ -1459,6 +1490,7 @@ class AgentCoordinator:
                 next_actions=answer.next_actions,
                 confidence=answer.confidence,
                 verification_mode=answer.verification_mode,
+                question_offer_reason=question_offer_reason,
                 model_provider=self._models.provider,
                 model_name=self._models.agent_model,
                 created_at=created_at,
@@ -1592,6 +1624,9 @@ class AgentCoordinator:
         return {
             "answer_id": answer_id,
             "task_id": task_id,
+            "response_style": response_style
+            if response_style in {"neutral", "congyu"}
+            else "neutral",
             **answer.model_dump(
                 mode="json",
                 exclude={"profile_suggestions"},
@@ -1616,6 +1651,10 @@ class AgentCoordinator:
             ],
             "evidence": [item.model_dump(mode="json") for item in evidence],
             "grounding": grounding.model_dump(mode="json"),
+            "question_offer": _question_offer_payload(
+                reason=question_offer_reason,
+                original_query=original_query,
+            ),
             "created_at": created_at.isoformat(),
         }
 
@@ -1656,11 +1695,19 @@ class AgentCoordinator:
         *,
         original_query: str,
         evidence: list[Evidence],
+        response_style: str = "neutral",
     ) -> AgentAnswer:
         evidence_note = (
             f"本轮已经取得 {len(evidence)} 条材料，但候选回答中的主张与引用关系没有通过最终校验。"
             if evidence
             else "本轮没有取得足以形成校园事实结论的材料。"
+        )
+        evidence_label = (
+            "Agent 人工核验资料"
+            if all(item.authority_level == "curated" for item in evidence)
+            else "检索到的官方与人工核验资料"
+            if any(item.authority_level == "curated" for item in evidence)
+            else "检索到的官方材料"
         )
         evidence_links = "\n".join(
             f"- [查看：{item.title}](<{item.canonical_url}>)"
@@ -1668,14 +1715,17 @@ class AgentCoordinator:
             if item.canonical_url.startswith(("http://", "https://"))
         )
         links_section = (
-            f"\n\n你可以先核对这些已检索到的官方材料：\n\n{evidence_links}"
+            f"\n\n你可以先核对这些已检索到的{evidence_label}：\n\n{evidence_links}"
             if evidence_links
             else ""
         )
         return AgentAnswer(
-            headline="这次回答未通过证据校验",
+            headline="这次回答还没通过证据校验"
+            if response_style == "congyu"
+            else "这次回答未通过证据校验",
             answer_markdown=(
-                f"关于“{original_query}”，{evidence_note}"
+                ("嗯，我先把边界说清楚：" if response_style == "congyu" else "")
+                + f"关于“{original_query}”，{evidence_note}"
                 "为避免把相关页面误写成确定结论，我暂不输出未经支持的校园事实。"
                 f"{links_section}"
             ),
@@ -1780,3 +1830,84 @@ def _clean_persisted_answer(
         }
     )
     return cleaned_answer, cleaned_evidence, cleaned_grounding
+
+
+def _question_offer_reason(
+    *,
+    domain_scope: str,
+    answer: AgentAnswer,
+    evidence: list[Evidence],
+    grounding: GroundingSummary,
+) -> str | None:
+    """Return the server-owned reason that permits creating one question.
+
+    This marker is intentionally persisted with the answer so the browser never
+    has to infer eligibility from natural-language wording.
+    """
+
+    if domain_scope != "in_scope":
+        return None
+    # A model or policy refusal is never a community-question invitation,
+    # even if a low-confidence fallback happens to accompany it.
+    if grounding.status == "unauthorized":
+        return None
+    # An empty evidence workspace is the strongest, most actionable reason to
+    # offer a question.  Do this before confidence/verification fallbacks so a
+    # safe answer that was calibrated to low confidence still reports the
+    # stable ``no_evidence`` reason rather than making the browser infer it.
+    if not evidence and grounding.status not in {"stale", "conflicting"}:
+        return "no_evidence"
+    if (
+        grounding.status not in {"insufficient", "stale", "conflicting"}
+        and answer.confidence != "low"
+        and answer.verification_mode != "degraded"
+    ):
+        return None
+    if grounding.status == "insufficient" and not evidence:
+        return "no_evidence"
+    if grounding.status == "stale":
+        return "grounding_stale"
+    if grounding.status == "conflicting":
+        return "grounding_conflicting"
+    if answer.verification_mode == "degraded":
+        return "verification_degraded"
+    if answer.confidence == "low":
+        return "low_confidence"
+    return "grounding_insufficient"
+
+
+def _question_offer_payload(
+    *,
+    reason: str | None,
+    original_query: str,
+) -> dict[str, str | None] | None:
+    if reason is None:
+        return None
+    gap = {
+        "no_evidence": "没有找到足够的关联校园证据。",
+        "low_confidence": "当前回答置信度较低，需要补充范围或权威材料。",
+        "grounding_insufficient": "引用材料不足以覆盖回答中的关键断言。",
+        "grounding_stale": "现有材料可能已经过期，无法确认当前安排。",
+        "grounding_conflicting": "检索到的权威材料存在冲突，需要人工核对。",
+        "verification_degraded": "引用核验未完成，暂时无法给出可靠结论。",
+    }.get(reason, "当前证据不足，需要进一步核对。")
+    details = (
+        "这次回答缺少足够的可核验材料。你可以补充想确认的范围，提交后由管理员审核，"
+        "再交给其他同学协助核对。"
+    )
+    if reason == "grounding_conflicting":
+        details = "检索到的材料存在冲突，暂时无法安全确认；可以把具体年份、学院或通知范围写进问题。"
+    elif reason == "grounding_stale":
+        details = "找到的材料可能已经过期，暂时不能把它当作当前安排；可以补充需要核对的年份或事项。"
+    elif reason == "verification_degraded":
+        details = "最终引用校验没有完成，当前只展示安全边界；可以提交问题，让管理员继续整理。"
+    return {
+        "reason": reason,
+        "title": f"关于{original_query[:80]}的具体安排"
+        if original_query
+        else "需要进一步核对的校园问题",
+        "details": details,
+        "evidence_gap": gap,
+        "existing_question_id": None,
+        "existing_status": None,
+    }

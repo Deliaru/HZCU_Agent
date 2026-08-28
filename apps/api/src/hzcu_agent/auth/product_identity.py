@@ -11,6 +11,7 @@ from hzcu_agent.config import Settings
 from hzcu_agent.db import Database
 from hzcu_agent.models import (
     AnswerFeedback,
+    CommunityQuestion,
     Conversation,
     ProductSubject,
     ProfileAttribute,
@@ -211,6 +212,9 @@ class ProductIdentityService:
             feedback_rows = exists(
                 select(AnswerFeedback.id).where(AnswerFeedback.subject_id == subject_id)
             )
+            question_rows = exists(
+                select(CommunityQuestion.id).where(CommunityQuestion.owner_subject_id == subject_id)
+            )
             return bool(
                 await session.scalar(
                     select(
@@ -220,6 +224,7 @@ class ProductIdentityService:
                             conversation_rows,
                             todo_rows,
                             feedback_rows,
+                            question_rows,
                         )
                     )
                 )

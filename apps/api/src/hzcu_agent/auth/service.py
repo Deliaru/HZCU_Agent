@@ -219,6 +219,34 @@ class AuthService:
             capability="server_admin",
         )
 
+    async def establish_local_contributor_subject(
+        self,
+        *,
+        subject: str,
+        return_to: str | None = None,
+    ) -> EstablishedSession:
+        validated_subject = _valid_subject(subject)
+        if validated_subject is None:
+            raise CasAuthenticationError(
+                "CONTRIBUTOR_SUBJECT_INVALID",
+                "贡献者账号格式不正确。",
+            )
+        return await self._establish_subject(
+            subject=validated_subject,
+            return_to=return_to,
+            identity_provider="local_contributor",
+            role="contributor",
+            event_type="contributor.login",
+            channel="password",
+            capability="community.answer",
+        )
+
+    def subject_hash_for(self, subject: str, *, identity_provider: str = "hzcu_cas") -> str:
+        validated_subject = _valid_subject(subject)
+        if validated_subject is None:
+            raise CasAuthenticationError("SUBJECT_INVALID", "身份标识格式不正确。")
+        return self._subject_hash(validated_subject, identity_provider=identity_provider)
+
     async def _establish_subject(
         self,
         *,
@@ -245,13 +273,18 @@ class AuthService:
                     CampusUser.subject_hash == subject_hash,
                 )
             )
+            access_scopes = (
+                ["public"]
+                if identity_provider == "local_contributor"
+                else ["public", "campus"]
+            )
             if user is None:
                 user = CampusUser(
                     id=new_id("usr"),
                     identity_provider=identity_provider,
                     subject_hash=subject_hash,
                     subject_hint=subject_hint,
-                    access_scopes=["public", "campus"],
+                    access_scopes=access_scopes,
                     role=role,
                     status="active",
                     created_at=now,
@@ -266,6 +299,11 @@ class AuthService:
                     )
                 user.subject_hint = subject_hint
                 user.role = role
+                # Contributor sessions must never inherit campus-only visibility
+                # from a previously created user row.  Their account is limited
+                # to public reading and community answers by design.
+                if identity_provider == "local_contributor":
+                    user.access_scopes = access_scopes
                 user.last_login_at = now
 
             # These mappers intentionally do not expose ORM relationships.

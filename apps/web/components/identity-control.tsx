@@ -101,6 +101,7 @@ export function IdentityControl({
           title={isLocalAdmin ? "退出后台管理员" : "退出校园身份"}
         >
           <LogOut size={14} />
+          <span className="identity-logout-label">退出</span>
         </button>
       </div>
     );

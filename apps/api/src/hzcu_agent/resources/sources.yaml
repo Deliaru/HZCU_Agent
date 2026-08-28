@@ -1612,3 +1612,45 @@ sources:
         - '/news/view/aid/\d+(?:/tag/[^/?#]+)?$'
       include_seed: false
       max_resources_per_run: 30
+
+  - id: hzcu-curated-public-knowledge
+    name: Agent 人工知识（公开）
+    owner_department: HZCU Agent 知识治理
+    base_url: https://hzcu.soranori.com/knowledge
+    allowed_hosts:
+      - hzcu.soranori.com
+    visibility: public
+    authority_level: curated
+    acquisition_methods:
+      - admin_publish
+    poll_interval_seconds: 86400
+    rate_limit_per_minute: 60
+    default_ttl_seconds: 31536000
+    live_required_for: []
+    parser_profile: curated_markdown
+    snapshot_policy: sanitized
+    enabled: true
+    connector:
+      kind: operator_import
+      max_resources_per_run: 500
+
+  - id: hzcu-curated-campus-knowledge
+    name: Agent 人工知识（校园）
+    owner_department: HZCU Agent 知识治理
+    base_url: https://hzcu.soranori.com/knowledge
+    allowed_hosts:
+      - hzcu.soranori.com
+    visibility: campus
+    authority_level: curated
+    acquisition_methods:
+      - admin_publish
+    poll_interval_seconds: 86400
+    rate_limit_per_minute: 60
+    default_ttl_seconds: 31536000
+    live_required_for: []
+    parser_profile: curated_markdown
+    snapshot_policy: sanitized
+    enabled: true
+    connector:
+      kind: operator_import
+      max_resources_per_run: 500

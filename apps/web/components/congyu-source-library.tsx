@@ -11,6 +11,7 @@ import {
   GitCompareArrows,
   History,
   LoaderCircle,
+  MessageSquareText,
   RefreshCw,
   ShieldCheck,
   X,
@@ -79,6 +80,7 @@ export function CongyuSourceLibrary(props: Props) {
       <header className="congyu-library-nav">
         <a href="/" className="congyu-library-brand"><Feather size={20} /><span><b>琮羽资料馆</b><small>CONGYU CAMPUS ARCHIVE</small></span></a>
         <a href="/"><ArrowLeft size={15} /> 返回调查室</a>
+        <a href="/questions"><MessageSquareText size={15} /> 问题悬赏版</a>
         <IdentityControl session={props.authSession} busy={props.authBusy} onLogout={props.onLogout} onAuthenticated={props.onAuthenticated} />
       </header>
 

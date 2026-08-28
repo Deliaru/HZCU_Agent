@@ -12,10 +12,12 @@ from hzcu_agent.auth.campus_access import (
     same_web_origin,
     valid_login_challenge,
 )
+from hzcu_agent.auth.contributor import ContributorAuthenticationError
 from hzcu_agent.auth.local_admin import LocalAdminAuthenticationError
 from hzcu_agent.auth.service import CasAuthenticationError, RequestPrincipal
 from hzcu_agent.schemas import (
     AuthSessionResponse,
+    ContributorLoginChallengeResponse,
     CredentialLoginChallengeResponse,
     CredentialLoginRequest,
     LocalAdminChallengeResponse,
@@ -215,6 +217,92 @@ async def login_local_admin(
         password = ""
         payload.password = SecretStr("")
     return await _local_admin_login_response(request, established)
+
+
+@router.get(
+    "/contributor/challenge",
+    response_model=ContributorLoginChallengeResponse,
+)
+async def contributor_login_challenge(request: Request) -> JSONResponse:
+    challenge = new_login_challenge()
+    response = JSONResponse(
+        ContributorLoginChallengeResponse(
+            challenge=challenge,
+            expires_in_seconds=300,
+        ).model_dump(mode="json")
+    )
+    response.set_cookie(
+        key=request.app.state.settings.auth_login_csrf_cookie_name,
+        value=challenge,
+        max_age=300,
+        httponly=True,
+        secure=request.app.state.settings.resolved_auth_cookie_secure,
+        samesite="strict",
+        path=f"{request.app.state.settings.api_prefix}/auth",
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@router.post("/contributor/login", response_model=AuthSessionResponse)
+async def contributor_login(
+    payload: CredentialLoginRequest,
+    request: Request,
+) -> JSONResponse:
+    settings = request.app.state.settings
+    if not same_web_origin(request.headers.get("origin"), settings.web_app_url):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "LOGIN_ORIGIN_DENIED", "message": "登录请求来源不受信任。"},
+        )
+    if not valid_login_challenge(
+        submitted=payload.challenge,
+        cookie=request.cookies.get(settings.auth_login_csrf_cookie_name),
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "LOGIN_CHALLENGE_INVALID",
+                "message": "登录安全校验已失效，请重新打开登录窗口。",
+            },
+        )
+    client_key = request.client.host if request.client else "unknown"
+    password = payload.password.get_secret_value()
+    try:
+        username = await request.app.state.contributors.authenticate(
+            username=payload.username,
+            password=password,
+            client_key=client_key,
+        )
+        established = await request.app.state.auth.establish_local_contributor_subject(
+            subject=username,
+            return_to=settings.web_app_url,
+        )
+    except ContributorAuthenticationError as exc:
+        code_status = (
+            status.HTTP_429_TOO_MANY_REQUESTS
+            if exc.code == "CONTRIBUTOR_RATE_LIMITED"
+            else status.HTTP_401_UNAUTHORIZED
+        )
+        raise HTTPException(
+            status_code=code_status, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
+    except CasAuthenticationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail={"code": exc.code, "message": str(exc)}
+        ) from exc
+    finally:
+        password = ""
+        payload.password = SecretStr("")
+    payload_response = await _auth_session_response(request, established.principal)
+    response = JSONResponse(payload_response.model_dump(mode="json"))
+    _set_application_session_cookies(response, request, established)
+    response.delete_cookie(
+        settings.auth_login_csrf_cookie_name,
+        path=f"{settings.api_prefix}/auth",
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @router.get(
@@ -418,7 +506,12 @@ async def _auth_session_response(
         )
     subject_kind = "visitor"
     if principal.authenticated:
-        subject_kind = "local_admin" if principal.identity_provider == "local_admin" else "campus"
+        if principal.identity_provider == "local_admin":
+            subject_kind = "local_admin"
+        elif principal.identity_provider == "local_contributor":
+            subject_kind = "contributor"
+        else:
+            subject_kind = "campus"
     return AuthSessionResponse(
         authenticated=principal.authenticated,
         auth_mode=settings.auth_mode,
@@ -438,6 +531,9 @@ async def _auth_session_response(
         query_access=access.mode,
         query_access_expires_at=access.expires_at,
         credential_handoff_available=access.credential_handoff_available,
+        read_only_capability=(
+            "community.answer" if principal.role == "contributor" else "campus_notice.read"
+        ),
         subject_kind=subject_kind,
         role=principal.role,
         visitor_data_available=(

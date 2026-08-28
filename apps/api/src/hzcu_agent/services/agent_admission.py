@@ -393,8 +393,7 @@ class AgentAdmissionService:
                 if principal.role != "visitor" or principal.authenticated
                 else max(
                     0,
-                    snapshot.subject_daily_limit
-                    - int(counter.task_count if counter else 0),
+                    snapshot.subject_daily_limit - int(counter.task_count if counter else 0),
                 )
             ),
             "window_reset_at": (
@@ -582,9 +581,11 @@ class AgentAdmissionService:
         if not principal.session_id:
             return False
         visitor = await session.get(VisitorSession, principal.session_id)
-        return visitor is not None and visitor.verified_until is not None and _aware(
-            visitor.verified_until
-        ) > now
+        return (
+            visitor is not None
+            and visitor.verified_until is not None
+            and _aware(visitor.verified_until) > now
+        )
 
     async def _get_counter(
         self,

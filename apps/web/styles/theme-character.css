@@ -85,6 +85,325 @@
 .congyu-space-backdrop{background:rgba(7,31,51,.58)!important;backdrop-filter:blur(12px)}.congyu-space-book{position:relative;overflow:hidden!important;border-radius:5px 22px 5px 22px!important;background:repeating-linear-gradient(0deg,transparent 0 31px,rgba(43,95,130,.055) 31px 32px),#fffdf7!important;box-shadow:0 28px 90px rgba(7,36,58,.32),inset 10px 0 0 #e6c373!important}.congyu-space-book:before{content:"CONGYU'S NOTEBOOK";position:absolute;right:15px;bottom:8px;color:rgba(34,88,125,.06);font-size:42px;font-weight:900;pointer-events:none}.congyu-space-book>header{position:relative;padding-left:28px!important;background:linear-gradient(100deg,#e8f6fc,#fff8e9)!important}.congyu-space-book>header>.congyu-artwork{position:absolute;right:54px;bottom:-13px;width:100px;height:100px}.congyu-space-book>nav{position:relative;padding-left:10px;background:#fbf5e7}.congyu-space-book>nav button{border-radius:9px 3px 0 0}.congyu-space-book>nav button.active{box-shadow:inset 0 -3px 0 #e1b95f}.congyu-space-book .space-content{position:relative;background:rgba(255,253,247,.78)}
 @media(max-width:760px){.congyu-onboarding-backdrop{align-items:flex-start;overflow-y:auto;padding:8px}.congyu-onboarding-panel{max-height:none;display:flex;flex-direction:column}.congyu-onboarding-character{min-height:560px}.congyu-onboarding-character>div{left:18px;top:20px}.congyu-onboarding-character h2{font-size:30px}.congyu-onboarding-character>.congyu-artwork{position:absolute;left:50%;width:min(330px,calc(100% - 16px));height:500px;min-height:0}.congyu-onboarding-form{overflow:visible;padding:25px 17px}.congyu-onboarding-form .profile-grid{grid-template-columns:1fr}.congyu-space-book>header>.congyu-artwork{right:38px;width:84px;height:84px}.congyu-space-book>nav{grid-template-columns:repeat(4,minmax(0,1fr))}.congyu-space-book>nav button{font-size:11px}}
 
+/* 琮羽问题悬赏板：独立的角色页面，只与简洁主题共享数据控制器。 */
+.congyu-questions-page,
+.congyu-questions-page *{
+  box-sizing:border-box;
+}
+.congyu-questions-page{
+  position:relative;
+  min-height:100svh;
+  overflow-x:hidden;
+  color:var(--congyu-ink);
+  background:
+    radial-gradient(circle at 72% 10%,rgba(255,255,255,.98),transparent 27%),
+    linear-gradient(145deg,#dceff9 0%,#f7fcff 49%,#e5f2f9 100%);
+  isolation:isolate;
+}
+.congyu-questions-sky{
+  position:fixed;
+  z-index:-1;
+  inset:0;
+  overflow:hidden;
+  pointer-events:none;
+  background:
+    linear-gradient(112deg,transparent 0 62%,rgba(46,133,190,.08) 62% 63%,transparent 63%),
+    repeating-linear-gradient(90deg,rgba(20,76,119,.035) 0 1px,transparent 1px 104px);
+}
+.congyu-questions-sky:before{
+  position:absolute;
+  right:-12vw;
+  top:-18vw;
+  width:min(68vw,900px);
+  aspect-ratio:1;
+  opacity:.12;
+  background:url("/themes/hzcu-girl/wing-field.webp") center/contain no-repeat;
+  content:"";
+  transform:rotate(-9deg);
+}
+.congyu-questions-sky i{
+  position:absolute;
+  width:250px;
+  height:250px;
+  border:1px solid rgba(31,104,157,.11);
+  border-radius:50%;
+  box-shadow:0 0 0 42px rgba(39,117,176,.028),0 0 0 84px rgba(39,117,176,.018);
+}
+.congyu-questions-sky i:first-child{left:-100px;bottom:8%}
+.congyu-questions-sky i:last-child{right:8%;top:19%;width:140px;height:140px}
+.congyu-questions-nav{
+  position:relative;
+  z-index:20;
+  display:flex;
+  height:68px;
+  align-items:center;
+  gap:24px;
+  padding:0 clamp(22px,4vw,66px);
+  border-bottom:1px solid rgba(25,75,114,.14);
+  background:rgba(247,252,255,.8);
+  backdrop-filter:blur(18px);
+}
+.congyu-questions-brand{
+  display:flex;
+  align-items:center;
+  gap:11px;
+  margin-right:auto;
+  color:var(--congyu-deep);
+  text-decoration:none;
+}
+.congyu-questions-brand>span:first-child{
+  display:grid;
+  width:39px;
+  height:39px;
+  place-items:center;
+  border-radius:50% 50% 50% 12px;
+  color:#fff;
+  background:linear-gradient(145deg,var(--congyu-deep),var(--congyu-blue));
+  box-shadow:0 9px 22px rgba(18,65,102,.2);
+}
+.congyu-questions-brand>span:last-child{display:grid;line-height:1}
+.congyu-questions-brand b{font:700 19px/1.05 "Noto Serif SC",serif;letter-spacing:.13em}
+.congyu-questions-brand small{margin-top:6px;color:#648198;font-size:7px;letter-spacing:.18em}
+.congyu-questions-nav nav{display:flex;align-items:center;gap:5px}
+.congyu-questions-nav nav a{
+  display:inline-flex;
+  min-height:38px;
+  align-items:center;
+  gap:6px;
+  padding:0 12px;
+  border-radius:99px;
+  color:#365e7d;
+  font-size:12px;
+  text-decoration:none;
+}
+.congyu-questions-nav nav a:hover{color:var(--congyu-deep);background:rgba(255,255,255,.86)}
+.congyu-questions-hero{
+  position:relative;
+  display:grid;
+  width:min(1260px,100%);
+  min-height:430px;
+  grid-template-columns:minmax(0,1fr) 360px;
+  align-items:center;
+  gap:20px;
+  margin:0 auto;
+  padding:46px clamp(28px,6vw,86px) 24px;
+  overflow:hidden;
+}
+.congyu-questions-hero>div:first-child{position:relative;z-index:3;max-width:720px}
+.congyu-questions-hero p{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin:0;
+  color:#5d7d96;
+  font-size:9px;
+  font-weight:800;
+  letter-spacing:.2em;
+}
+.congyu-questions-hero p span{
+  display:grid;
+  width:30px;
+  height:30px;
+  place-items:center;
+  border-radius:50%;
+  color:#fff;
+  background:var(--congyu-blue);
+  letter-spacing:0;
+  box-shadow:0 0 0 5px rgba(43,111,172,.09);
+}
+.congyu-questions-hero h1{
+  max-width:660px;
+  margin:17px 0 18px;
+  color:var(--congyu-deep);
+  font:800 clamp(40px,4.2vw,58px)/1.12 "Noto Serif SC",serif;
+  letter-spacing:-.055em;
+}
+.congyu-questions-hero h1 em{color:var(--congyu-blue);font-style:normal}
+.congyu-questions-hero blockquote{
+  max-width:660px;
+  margin:0;
+  padding:4px 0 4px 17px;
+  border-left:3px solid var(--congyu-gold);
+  color:#4c6d85;
+  font-size:13px;
+  line-height:1.9;
+}
+.congyu-questions-hero>.congyu-artwork{
+  position:relative;
+  z-index:2;
+  align-self:end;
+  justify-self:center;
+  width:330px;
+  height:340px;
+  filter:drop-shadow(0 22px 20px rgba(19,58,88,.15));
+}
+.congyu-questions-hero:after{
+  position:absolute;
+  right:2%;
+  bottom:12px;
+  width:430px;
+  height:75px;
+  background:radial-gradient(ellipse,rgba(30,79,117,.2),transparent 67%);
+  content:"";
+  filter:blur(10px);
+}
+.congyu-questions-desk{
+  position:relative;
+  z-index:4;
+  width:min(1180px,calc(100% - 40px));
+  min-height:360px;
+  margin:-22px auto 58px;
+  padding:28px clamp(22px,3vw,42px) 42px;
+  border:1px solid rgba(45,76,91,.16);
+  border-radius:6px 24px 6px 24px;
+  background:
+    repeating-linear-gradient(0deg,transparent 0 31px,rgba(45,100,139,.045) 31px 32px),
+    rgba(255,253,247,.96);
+  box-shadow:0 28px 76px rgba(23,65,95,.14),inset 10px 0 0 #e7c477;
+}
+.congyu-questions-desk>.questions-board,
+.congyu-questions-desk>.question-detail{gap:20px;padding-top:0}
+.congyu-bounty-heading{
+  display:flex;
+  align-items:end;
+  gap:28px;
+  padding:0 4px 18px;
+  border-bottom:1px solid rgba(47,78,95,.15);
+}
+.congyu-bounty-heading>div{margin-right:auto}
+.congyu-bounty-heading span{color:#a58855;font-size:8px;font-weight:800;letter-spacing:.18em}
+.congyu-bounty-heading h2{margin:6px 0 0;color:var(--congyu-deep);font:700 27px/1.2 "Noto Serif SC",serif}
+.congyu-bounty-heading p{max-width:460px;margin:0;color:#667f90;font-size:11px;line-height:1.75;text-align:right}
+.congyu-questions-page .questions-list{gap:9px}
+.congyu-questions-page .question-list-card{
+  position:relative;
+  grid-template-columns:52px minmax(0,1fr) auto;
+  gap:17px;
+  padding:19px 20px;
+  overflow:hidden;
+  border:1px solid rgba(47,78,95,.13);
+  border-radius:3px 15px 3px 15px;
+  color:#244b67;
+  background:rgba(255,255,255,.72);
+  box-shadow:0 8px 22px rgba(34,70,94,.045);
+}
+.congyu-questions-page .question-list-card:before{
+  position:absolute;
+  inset:0 auto 0 0;
+  width:4px;
+  background:linear-gradient(var(--congyu-gold),#f4d99a);
+  content:"";
+}
+.congyu-questions-page .question-list-card:hover{
+  border-color:rgba(40,108,174,.35);
+  box-shadow:0 14px 32px rgba(31,82,119,.1);
+  transform:translateX(4px);
+}
+.congyu-questions-page .question-list-index{color:#b28d4e;font:700 24px/1 "Noto Serif SC",serif}
+.congyu-questions-page .question-list-card h2{color:#173f5e;font:700 19px/1.35 "Noto Serif SC",serif}
+.congyu-questions-page .question-list-card p{color:#617b8d;font-size:12px}
+.congyu-questions-page .question-list-card small{color:#81929d}
+.congyu-questions-page .question-list-card>b,
+.congyu-questions-page .question-status{
+  padding:5px 9px;
+  border-radius:99px;
+  color:#fff;
+  background:#3d83ad;
+  font-size:9px;
+  font-weight:700;
+}
+.congyu-questions-page .questions-empty,
+.congyu-questions-page .questions-loading{
+  border-color:rgba(52,89,111,.2);
+  border-radius:3px 14px 3px 14px;
+  color:#718694;
+  background:rgba(239,248,251,.55);
+}
+.congyu-questions-page .questions-back{color:#4c7795}
+.congyu-questions-page .question-detail-heading{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:12px 24px;
+  padding:2px 2px 22px;
+  border-bottom:1px solid rgba(47,78,95,.16);
+}
+.congyu-questions-page .question-detail-heading .question-status{justify-self:start}
+.congyu-questions-page .question-detail-heading h1{
+  grid-column:1/-1;
+  margin:0;
+  color:var(--congyu-deep);
+  font:700 clamp(30px,4vw,48px)/1.2 "Noto Serif SC",serif;
+  letter-spacing:-.04em;
+}
+.congyu-questions-page .question-detail-heading>p{
+  grid-column:1/-1;
+  margin:0;
+  color:#526f84;
+  font-size:13px;
+  line-height:1.8;
+}
+.congyu-questions-page .question-detail-heading>small{grid-column:1/-1;color:#82929d}
+.congyu-questions-page .question-evidence-gap{
+  border-left-color:var(--congyu-gold);
+  border-radius:0 12px 0 12px;
+  color:#725b35;
+  background:rgba(255,243,207,.62);
+}
+.congyu-questions-page .community-answers>header{border-color:rgba(47,78,95,.15)}
+.congyu-questions-page .community-answers h2{color:#153e5d;font:700 23px/1.2 "Noto Serif SC",serif}
+.congyu-questions-page .community-answer-card{
+  border-color:rgba(47,78,95,.14);
+  border-radius:3px 15px 3px 15px;
+  color:#31546b;
+  background:rgba(255,255,255,.73);
+  box-shadow:0 9px 24px rgba(34,70,94,.05);
+}
+.congyu-questions-page .community-answer-card>header b{color:#235f8b}
+.congyu-questions-page .community-answer-form,
+.congyu-questions-page .contributor-login-box{
+  border-color:rgba(39,90,125,.16);
+  border-radius:4px 16px 4px 16px;
+  background:rgba(231,245,251,.68);
+}
+.congyu-questions-page .community-answer-form textarea,
+.congyu-questions-page .contributor-login-form input{
+  border-color:rgba(39,90,125,.2);
+  border-radius:8px 3px 8px 3px;
+  color:var(--congyu-deep);
+  background:#fffef9;
+}
+.congyu-questions-page .community-answer-form button,
+.congyu-questions-page .contributor-login-box button,
+.congyu-questions-page .contributor-login-form button{
+  border:0;
+  border-radius:11px 3px 11px 3px;
+  background:linear-gradient(135deg,#164b76,#2e7caf);
+}
+
+@media(max-width:760px){
+  .congyu-questions-nav{height:58px;padding:0 12px;gap:8px}
+  .congyu-questions-brand>span:first-child{width:35px;height:35px}
+  .congyu-questions-brand b{font-size:16px}
+  .congyu-questions-brand small{display:none}
+  .congyu-questions-nav nav{gap:0}
+  .congyu-questions-nav nav a{width:36px;padding:0;justify-content:center;font-size:0}
+  .congyu-questions-nav nav a svg{width:18px;height:18px}
+  .congyu-questions-hero{min-height:470px;display:block;padding:32px 19px 20px}
+  .congyu-questions-hero>div:first-child{max-width:100%}
+  .congyu-questions-hero h1{max-width:340px;font-size:42px}
+  .congyu-questions-hero blockquote{position:relative;z-index:4;max-width:76%;font-size:11px;line-height:1.7}
+  .congyu-questions-hero>.congyu-artwork{position:absolute;right:-12px;bottom:-8px;width:230px;height:240px}
+  .congyu-questions-hero:after{right:-80px;width:330px}
+  .congyu-questions-desk{width:calc(100% - 16px);margin:-18px 8px 28px;padding:20px 13px 30px;border-radius:4px 18px 4px 18px;box-shadow:0 20px 54px rgba(23,65,95,.13),inset 7px 0 0 #e7c477}
+  .congyu-bounty-heading{display:block;padding-left:8px}
+  .congyu-bounty-heading p{margin-top:8px;text-align:left}
+  .congyu-questions-page .question-list-card{grid-template-columns:34px minmax(0,1fr);padding:15px 13px}
+  .congyu-questions-page .question-list-card>b{grid-column:2;justify-self:start}
+  .congyu-questions-page .question-detail-heading{grid-template-columns:1fr}
+  .congyu-questions-page .question-detail-heading h1{font-size:32px}
+  .congyu-questions-page .community-answer-card{padding:16px 14px}
+}
+
 /* 角色反馈：答案头像、调查扫描和状态贴纸使用同一套有节奏的动效。 */
 .congyu-answer-avatar{
   width:58px;

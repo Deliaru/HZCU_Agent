@@ -6,8 +6,18 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import update
 
-from hzcu_agent.api.routes import admin, agent, auth, conversations, health, product, sources
+from hzcu_agent.api.routes import (
+    admin,
+    agent,
+    auth,
+    community,
+    conversations,
+    health,
+    product,
+    sources,
+)
 from hzcu_agent.auth.campus_access import CampusAccessBroker
+from hzcu_agent.auth.contributor import LocalContributorAuthenticator
 from hzcu_agent.auth.local_admin import LocalAdminAuthenticator
 from hzcu_agent.auth.product_identity import ProductIdentityService
 from hzcu_agent.auth.service import AuthService
@@ -57,6 +67,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             database=database,
         )
         product_identity = ProductIdentityService(
+            settings=resolved_settings,
+            database=database,
+        )
+        contributors = LocalContributorAuthenticator(
             settings=resolved_settings,
             database=database,
         )
@@ -123,6 +137,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.database = database
         app.state.auth = auth_service
         app.state.local_admin = local_admin
+        app.state.contributors = contributors
         app.state.product_identity = product_identity
         app.state.campus_access = campus_access
         app.state.source_registry = source_registry
@@ -178,6 +193,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health.router, prefix=resolved_settings.api_prefix)
     app.include_router(agent.router, prefix=resolved_settings.api_prefix)
     app.include_router(auth.router, prefix=resolved_settings.api_prefix)
+    app.include_router(community.router, prefix=resolved_settings.api_prefix)
+    app.include_router(community.admin_router, prefix=resolved_settings.api_prefix)
     app.include_router(admin.router, prefix=resolved_settings.api_prefix)
     app.include_router(conversations.router, prefix=resolved_settings.api_prefix)
     app.include_router(product.router, prefix=resolved_settings.api_prefix)

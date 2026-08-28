@@ -64,6 +64,7 @@ export type AgentAnswer = {
   assumptions: string[];
   next_actions: string[];
   confidence: "low" | "medium" | "high";
+  response_style: "neutral" | "congyu";
   verification_mode:
     | "live_verified"
     | "cache"
@@ -102,7 +103,52 @@ export type AgentAnswer = {
     spans: Array<Record<string, unknown>>;
   } | null;
   profile_suggestions: ProfileAttribute[];
+  question_offer: QuestionOffer | null;
   created_at: string;
+};
+
+export type QuestionOffer = {
+  reason:
+    | "no_evidence"
+    | "low_confidence"
+    | "grounding_insufficient"
+    | "grounding_stale"
+    | "grounding_conflicting"
+    | "verification_degraded";
+  title: string;
+  details: string;
+  evidence_gap: string;
+  existing_question_id: string | null;
+  existing_status: string | null;
+};
+
+export type CommunityAnswer = {
+  answer_id: string;
+  question_id: string;
+  answer_markdown: string;
+  display_name: string;
+  unit: string | null;
+  status: "visible" | "hidden";
+  knowledge_review_state: string;
+  can_edit: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type QuestionSummary = {
+  question_id: string;
+  title: string;
+  details: string;
+  status: "pending_review" | "open" | "answered" | "rejected" | "hidden";
+  answer_count: number;
+  waiting_seconds: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type QuestionDetail = QuestionSummary & {
+  evidence_gap: string;
+  answers: CommunityAnswer[];
 };
 
 export type Health = {
@@ -123,9 +169,9 @@ export type AuthSession = {
   query_access: "direct" | "vpn" | "unavailable";
   query_access_expires_at: string | null;
   credential_handoff_available: boolean;
-  read_only_capability: "campus_notice.read";
-  subject_kind: "visitor" | "campus" | "local_admin";
-  role: "visitor" | "student" | "admin";
+  read_only_capability: "campus_notice.read" | "community.answer";
+  subject_kind: "visitor" | "campus" | "local_admin" | "contributor";
+  role: "visitor" | "student" | "admin" | "contributor";
   visitor_data_available: boolean;
   local_admin_enabled: boolean;
   local_admin_configured: boolean;
@@ -352,6 +398,8 @@ type LocalAdminChallenge = {
   expires_in_seconds: number;
 };
 
+type ContributorChallenge = LocalAdminChallenge;
+
 export type SourceStatus = {
   source_id: string;
   name: string;
@@ -461,6 +509,52 @@ export type SourceAlert = {
   code: string;
   message: string;
   detected_at: string;
+};
+
+export type Contributor = {
+  contributor_id: string;
+  username: string;
+  public_name: string;
+  unit: string | null;
+  status: "active" | "disabled";
+  created_at: string;
+  updated_at: string;
+  last_login_at: string | null;
+};
+
+export type KnowledgeEntry = {
+  entry_id: string;
+  question_id: string | null;
+  title: string;
+  canonical_question: string;
+  answer_markdown: string;
+  category: string;
+  alternative_phrasings: string[];
+  applicable_scope: string;
+  maintainer_unit: string;
+  basis_note: string;
+  validity: "stable" | "time_bounded";
+  effective_from: string | null;
+  effective_to: string | null;
+  visibility: "public" | "campus";
+  origin_answer_ids: string[];
+  status: "draft" | "published" | "retired";
+  published_source_id: string | null;
+  published_resource_id: string | null;
+  published_version_id: string | null;
+  content_hash: string | null;
+  created_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+  published_at: string | null;
+};
+
+export type KnowledgeOptimization = {
+  entry_id: string;
+  suggested_title: string;
+  suggested_category: string;
+  suggested_phrasings: string[];
+  scope_risk: string;
 };
 
 export class ApiError extends Error {
@@ -670,10 +764,29 @@ export async function sendMessage(
   conversationId: string,
   message: string,
   clientMessageId = crypto.randomUUID(),
+  responseStyle: "neutral" | "congyu" = "neutral",
 ): Promise<{ task_id: string; stream_url: string; queue_position: number }> {
   return apiFetch(`/conversations/${conversationId}/messages`, {
     method: "POST",
-    body: JSON.stringify({ message, client_message_id: clientMessageId }),
+    body: JSON.stringify({
+      message,
+      client_message_id: clientMessageId,
+      response_style: responseStyle,
+    }),
+  });
+}
+
+export async function loginContributor(
+  username: string,
+  password: string,
+): Promise<AuthSession> {
+  const challenge = await apiFetch<ContributorChallenge>(
+    "/auth/contributor/challenge",
+    { cache: "no-store" },
+  );
+  return apiFetch<AuthSession>("/auth/contributor/login", {
+    method: "POST",
+    body: JSON.stringify({ username, password, challenge: challenge.challenge }),
   });
 }
 
@@ -741,6 +854,54 @@ export async function reverifyAnswer(
 
 export async function getAnswer(answerId: string): Promise<AgentAnswer> {
   return apiFetch(`/answers/${encodeURIComponent(answerId)}`, { cache: "no-store" });
+}
+
+export async function createQuestionFromAnswer(
+  answerId: string,
+  payload: { title: string; details: string },
+): Promise<QuestionDetail> {
+  return apiFetch(`/answers/${encodeURIComponent(answerId)}/question`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function listQuestions(): Promise<QuestionSummary[]> {
+  return apiFetch("/questions", { cache: "no-store" });
+}
+
+export async function getQuestion(questionId: string): Promise<QuestionDetail> {
+  return apiFetch(`/questions/${encodeURIComponent(questionId)}`, {
+    cache: "no-store",
+  });
+}
+
+export async function postQuestionAnswer(
+  questionId: string,
+  answerMarkdown: string,
+): Promise<CommunityAnswer> {
+  return apiFetch(`/questions/${encodeURIComponent(questionId)}/answers`, {
+    method: "POST",
+    body: JSON.stringify({ answer_markdown: answerMarkdown }),
+  });
+}
+
+export async function updateQuestionAnswer(
+  questionId: string,
+  answerId: string,
+  answerMarkdown: string,
+): Promise<CommunityAnswer> {
+  return apiFetch(
+    `/questions/${encodeURIComponent(questionId)}/answers/${encodeURIComponent(answerId)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ answer_markdown: answerMarkdown }),
+    },
+  );
+}
+
+export async function getKnowledgeEntry(entryId: string): Promise<KnowledgeEntry> {
+  return apiFetch(`/knowledge/${encodeURIComponent(entryId)}`, { cache: "no-store" });
 }
 
 export async function getProfile(): Promise<StudentProfile> {
@@ -908,4 +1069,108 @@ export async function getAdminConversationTrace(
 
 export async function getAdminFeedback(): Promise<Feedback[]> {
   return apiFetch("/admin/feedback", { cache: "no-store" });
+}
+
+export async function getAdminQuestions(status?: string): Promise<QuestionDetail[]> {
+  const suffix = status ? `?status=${encodeURIComponent(status)}` : "";
+  return apiFetch(`/admin/questions${suffix}`, { cache: "no-store" });
+}
+
+export async function reviewAdminQuestion(
+  questionId: string,
+  payload: { status: "open" | "rejected" | "hidden"; review_note?: string | null },
+): Promise<QuestionDetail> {
+  return apiFetch(`/admin/questions/${encodeURIComponent(questionId)}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function moderateCommunityAnswer(
+  questionId: string,
+  answerId: string,
+  answerStatus: "visible" | "hidden",
+): Promise<CommunityAnswer> {
+  return apiFetch(
+    `/admin/questions/${encodeURIComponent(questionId)}/answers/${encodeURIComponent(answerId)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ status: answerStatus }),
+    },
+  );
+}
+
+export async function getAdminContributors(): Promise<Contributor[]> {
+  return apiFetch("/admin/contributors", { cache: "no-store" });
+}
+
+export async function createAdminContributor(payload: {
+  username: string;
+  password: string;
+  public_name: string;
+  unit?: string;
+}): Promise<Contributor> {
+  return apiFetch("/admin/contributors", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateAdminContributor(
+  contributorId: string,
+  payload: {
+    public_name?: string;
+    unit?: string;
+    status?: "active" | "disabled";
+    password?: string;
+  },
+): Promise<Contributor> {
+  return apiFetch(`/admin/contributors/${encodeURIComponent(contributorId)}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getAdminKnowledge(): Promise<KnowledgeEntry[]> {
+  return apiFetch("/admin/knowledge", { cache: "no-store" });
+}
+
+export async function createAdminKnowledge(
+  payload: Omit<KnowledgeEntry, "entry_id" | "status" | "published_source_id" | "published_resource_id" | "published_version_id" | "content_hash" | "created_by_user_id" | "created_at" | "updated_at" | "published_at">,
+): Promise<KnowledgeEntry> {
+  return apiFetch("/admin/knowledge", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateAdminKnowledge(
+  entryId: string,
+  payload: Omit<KnowledgeEntry, "entry_id" | "status" | "published_source_id" | "published_resource_id" | "published_version_id" | "content_hash" | "created_by_user_id" | "created_at" | "updated_at" | "published_at">,
+): Promise<KnowledgeEntry> {
+  return apiFetch(`/admin/knowledge/${encodeURIComponent(entryId)}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function optimizeAdminKnowledge(entryId: string): Promise<KnowledgeOptimization> {
+  return apiFetch(`/admin/knowledge/${encodeURIComponent(entryId)}/optimize`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export async function publishAdminKnowledge(entryId: string): Promise<KnowledgeEntry> {
+  return apiFetch(`/admin/knowledge/${encodeURIComponent(entryId)}/publish`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export async function retireAdminKnowledge(entryId: string): Promise<KnowledgeEntry> {
+  return apiFetch(`/admin/knowledge/${encodeURIComponent(entryId)}/retire`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
 }

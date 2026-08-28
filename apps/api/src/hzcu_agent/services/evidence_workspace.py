@@ -39,10 +39,14 @@ class EvidenceWorkspace:
                 changed.append(item)
                 continue
             previous_score = self._scores.get(key, 0.0)
-            self._scores[key] = max(previous_score, incoming_score) + min(
-                previous_score,
-                incoming_score,
-            ) * 0.25
+            self._scores[key] = (
+                max(previous_score, incoming_score)
+                + min(
+                    previous_score,
+                    incoming_score,
+                )
+                * 0.25
+            )
             existing = self._items[existing_index]
             if (
                 candidate.document_version_id

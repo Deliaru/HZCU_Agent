@@ -147,8 +147,7 @@ class AgentTaskScheduler:
             # scheduler's SQLite read transaction open would unnecessarily
             # hold a shared lock over that write.
             persisted_running = {
-                (subject_id or ""): int(count or 0)
-                for subject_id, count in persisted_running_rows
+                (subject_id or ""): int(count or 0) for subject_id, count in persisted_running_rows
             }
             for task in queued:
                 if capacity <= 0:

@@ -400,9 +400,7 @@ class AgentPolicyService:
         secret: str | None = None
         if row.encrypted_turnstile_secret:
             if self._fernet is None:
-                raise AgentPolicyConfigError(
-                    "读取 Turnstile secret 需要服务器会话加密密钥。"
-                )
+                raise AgentPolicyConfigError("读取 Turnstile secret 需要服务器会话加密密钥。")
             try:
                 secret = self._fernet.decrypt(
                     row.encrypted_turnstile_secret.encode("ascii")

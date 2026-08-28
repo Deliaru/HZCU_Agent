@@ -21,6 +21,7 @@ _FTS_DELETE_TRIGGER = "campus_search_fts_v1_ad"
 _FTS_UPDATE_TRIGGER = "campus_search_fts_v1_au"
 _EXCLUDED_QUALITY = (
     "rejected",
+    "retracted",
     "excluded_temporal",
     "excluded_expired_event",
     "binary_mirrored",
@@ -36,9 +37,9 @@ class CampusMemorySearchArguments(BaseModel):
         default_factory=list,
         max_length=3,
     )
-    source_ids: list[
-        Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9-]{2,119}$")]
-    ] = Field(default_factory=list, max_length=3)
+    source_ids: list[Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9-]{2,119}$")]] = Field(
+        default_factory=list, max_length=3
+    )
     top_k: int = Field(default=8, ge=1, le=12)
 
 

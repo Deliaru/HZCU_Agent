@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 _EXCLUDED_QUALITY = (
     "rejected",
+    "retracted",
     "excluded_temporal",
     "excluded_expired_event",
     "image_pending_transcription",
@@ -75,9 +76,7 @@ _QUERY_STOP_TERMS = {
     "这个",
     "那个",
 }
-_ENUMERATION_PATTERN = re.compile(
-    r"几个|多少|哪些|有什么|列出|列表|名单|目录|一览|全部|所有|分别"
-)
+_ENUMERATION_PATTERN = re.compile(r"几个|多少|哪些|有什么|列出|列表|名单|目录|一览|全部|所有|分别")
 _GENERIC_FILENAME_PATTERN = re.compile(
     r"^(?:image|img|pic|picture|photo|截图|微信图片|[0-9a-f_-]{8,}|\d+)"
     r"(?:\.(?:png|jpe?g|gif|webp))?$",
@@ -178,9 +177,7 @@ class CampusHybridRetriever:
                         """
                     )
                 )
-                count = await session.scalar(
-                    text(f"SELECT count(*) FROM {DOCUMENT_FTS_TABLE}")
-                )
+                count = await session.scalar(text(f"SELECT count(*) FROM {DOCUMENT_FTS_TABLE}"))
                 await session.commit()
         return int(count or 0)
 
@@ -201,9 +198,7 @@ class CampusHybridRetriever:
             self._source_routing_available = True
         await self.initialize()
         async with self._database.session_factory() as session:
-            count = await session.scalar(
-                text(f"SELECT count(*) FROM {DOCUMENT_FTS_TABLE}")
-            )
+            count = await session.scalar(text(f"SELECT count(*) FROM {DOCUMENT_FTS_TABLE}"))
         return int(count or 0)
 
     async def _ensure_document_index(self) -> None:
@@ -221,9 +216,7 @@ class CampusHybridRetriever:
                     """
                 )
             )
-            indexed = await session.scalar(
-                text(f"SELECT 1 FROM {DOCUMENT_FTS_TABLE} LIMIT 1")
-            )
+            indexed = await session.scalar(text(f"SELECT 1 FROM {DOCUMENT_FTS_TABLE} LIMIT 1"))
             if indexed is None:
                 await session.execute(
                     text(
@@ -361,9 +354,7 @@ class CampusHybridRetriever:
             strict_candidate_rows = 0
             successful_short_terms: list[str] = []
 
-            channel_specs: list[
-                tuple[str, str, list[str], list[str] | None, float, set[int]]
-            ] = []
+            channel_specs: list[tuple[str, str, list[str], list[str] | None, float, set[int]]] = []
             seen_specs: dict[tuple[str, str, tuple[str, ...]], int] = {}
             for variant_index, (variant, terms) in enumerate(
                 zip(query_variants, term_sets, strict=True)
@@ -459,8 +450,7 @@ class CampusHybridRetriever:
                     candidate.channels.add(kind)
                     for variant_index in variant_indices:
                         candidate.variant_scores[variant_index] = (
-                            candidate.variant_scores.get(variant_index, 0.0)
-                            + contribution
+                            candidate.variant_scores.get(variant_index, 0.0) + contribution
                         )
 
             bounded = sorted(
@@ -468,9 +458,7 @@ class CampusHybridRetriever:
                 key=lambda item: item.rrf_score,
                 reverse=True,
             )[:MAX_CANDIDATES]
-            is_enumeration = any(
-                _ENUMERATION_PATTERN.search(value) for value in query_variants
-            )
+            is_enumeration = any(_ENUMERATION_PATTERN.search(value) for value in query_variants)
             inferred_sources = set(routed_sources) - set(model_sources)
             for candidate in bounded:
                 self._score_candidate(
@@ -508,18 +496,13 @@ class CampusHybridRetriever:
                 all_terms,
             )
 
-        evidence = [
-            _candidate_evidence(candidate, chunks, all_terms)
-            for candidate in selected
-        ]
+        evidence = [_candidate_evidence(candidate, chunks, all_terms) for candidate in selected]
         selected_sources = {item.source_id for item in evidence}
         unmatched_model_sources = [
             source_id for source_id in model_sources if source_id not in selected_sources
         ]
         source_counts = Counter(item.source_id for item in evidence)
-        concentration = (
-            max(source_counts.values(), default=0) / len(evidence) if evidence else 0.0
-        )
+        concentration = max(source_counts.values(), default=0) / len(evidence) if evidence else 0.0
         has_scope_listing = any(candidate.scope_listing for candidate in selected)
         coverage_risk = bool(
             not evidence
@@ -585,12 +568,10 @@ class CampusHybridRetriever:
         for group in normalized.split(" "):
             compact = _clean_term(group)
             group_tokens = [
-                _clean_term(token)
-                for token in self._tokenizer.cut(group, cut_all=False)
+                _clean_term(token) for token in self._tokenizer.cut(group, cut_all=False)
             ]
-            if (
-                3 <= len(compact) <= 24
-                and not any(token in _QUERY_STOP_TERMS for token in group_tokens)
+            if 3 <= len(compact) <= 24 and not any(
+                token in _QUERY_STOP_TERMS for token in group_tokens
             ):
                 terms.append(compact)
         for token in self._tokenizer.cut(normalized, cut_all=False):
@@ -615,8 +596,7 @@ class CampusHybridRetriever:
         model_sources: list[str] = []
         if requested:
             source_bindings = {
-                f"requested_source_{index}": value
-                for index, value in enumerate(requested)
+                f"requested_source_{index}": value for index, value in enumerate(requested)
             }
             source_clause = ", ".join(f":{key}" for key in source_bindings)
             model_sources = list(
@@ -636,14 +616,15 @@ class CampusHybridRetriever:
             )
             model_sources.sort(key=requested.index)
 
-        term_bindings = {
-            f"route_term_{index}": term for index, term in enumerate(terms[:10])
-        }
-        coverage_expression = " + ".join(
-            "CASE WHEN instr(lower(p.name || ' ' || p.owner || ' ' || p.titles), "
-            f":{key}) > 0 THEN 1 ELSE 0 END"
-            for key in term_bindings
-        ) or "0"
+        term_bindings = {f"route_term_{index}": term for index, term in enumerate(terms[:10])}
+        coverage_expression = (
+            " + ".join(
+                "CASE WHEN instr(lower(p.name || ' ' || p.owner || ' ' || p.titles), "
+                f":{key}) > 0 THEN 1 ELSE 0 END"
+                for key in term_bindings
+            )
+            or "0"
+        )
         if not self._source_routing_available:
             return model_sources, model_sources
         try:
@@ -687,8 +668,7 @@ class CampusHybridRetriever:
                     sibling
                     for sibling in positive_rows
                     if sibling is not row
-                    and str(sibling.get("base_url") or "").rstrip("/").lower()
-                    == base_url
+                    and str(sibling.get("base_url") or "").rstrip("/").lower() == base_url
                 )
             for item in related:
                 source_id = str(item["source_id"])
@@ -716,23 +696,28 @@ class CampusHybridRetriever:
         }
         quality_clause = ", ".join(f":{key}" for key in quality_bindings)
         short_bindings = {
-            f"short_term_{index}": value
-            for index, value in enumerate(required_short_terms[:4])
+            f"short_term_{index}": value for index, value in enumerate(required_short_terms[:4])
         }
         short_clause = "".join(
-            "\n AND instr(lower(v.title || ' ' || v.normalized_text), "
-            f":{key}) > 0"
+            f"\n AND instr(lower(v.title || ' ' || v.normalized_text), :{key}) > 0"
             for key in short_bindings
         )
         source_bindings: dict[str, str] = {}
-        source_clause = ""
+        source_order_clause = ""
         if source_ids:
             source_bindings = {
-                f"route_source_{index}": value
-                for index, value in enumerate(source_ids)
+                f"route_source_{index}": value for index, value in enumerate(source_ids)
             }
             source_values = ", ".join(f":{key}" for key in source_bindings)
-            source_clause = f"\n AND s.id IN ({source_values})"
+            # Routed source hints are intentionally soft.  Keeping this as an
+            # ORDER BY preference lets a high-quality result from another
+            # visible source survive a stale or incomplete source index; the
+            # route must never become a hard visibility/filter boundary.
+            source_order_clause = (
+                "\n                            CASE WHEN s.id IN ("
+                + source_values
+                + ") THEN 0 ELSE 1 END ASC,"
+            )
         rows = list(
             (
                 await session.execute(
@@ -763,8 +748,8 @@ class CampusHybridRetriever:
                           AND s.visibility IN ({visibility_clause})
                           AND v.quality_status NOT IN ({quality_clause})
                           {short_clause}
-                          {source_clause}
-                        ORDER BY search_score ASC,
+                        ORDER BY{source_order_clause}
+                            search_score ASC,
                             COALESCE(v.published_at, v.observed_at) DESC
                         LIMIT :result_limit
                         """
@@ -886,9 +871,7 @@ class CampusHybridRetriever:
 
 
 def _append_channel(
-    channels: list[
-        tuple[str, str, list[str], list[str] | None, float, set[int]]
-    ],
+    channels: list[tuple[str, str, list[str], list[str] | None, float, set[int]]],
     seen: dict[tuple[str, str, tuple[str, ...]], int],
     kind: str,
     expression: str,

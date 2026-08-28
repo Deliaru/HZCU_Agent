@@ -12,6 +12,7 @@ import {
   ListChecks,
   LoaderCircle,
   Menu,
+  MessageSquareText,
   PanelRightOpen,
   RefreshCw,
   Send,
@@ -39,6 +40,7 @@ import type {
 import { CongyuArtwork, type CongyuScene } from "./congyu-artwork";
 import { IdentityControl } from "./identity-control";
 import { MySpacePanel, OnboardingPanel } from "./product-panels";
+import { QuestionOfferPanel } from "./question-offer";
 
 export type CongyuStage =
   | "idle"
@@ -185,6 +187,7 @@ export function CongyuAgentView(props: Props) {
             <History size={16} /> 会话
           </button>
           <a href="/sources"><BookOpen size={16} /> 资料馆</a>
+          <a href="/questions"><MessageSquareText size={16} /> 问题悬赏版</a>
           <button type="button" onClick={() => props.onSpaceOpen(true)}>
             <UserRound size={16} /> 我的手帐
           </button>
@@ -251,7 +254,7 @@ function WelcomeStage(props: Props) {
         <p className="congyu-chapter"><span>01</span> CAMPUS INVESTIGATION</p>
         <h1 id="congyu-welcome-title">校园里的事，<br /><em>和琮羽一起查清</em></h1>
         <p className="congyu-intro">
-          课程、校历、竞赛和办事流程，都可以直接问我。需要核实的地方，我会翻阅学校材料，把结论和出处一起交给你。
+          嗯……想查什么就交给我吧。课程、校历、竞赛还是办事流程，我会顺着学校材料一路查下去；结论和出处，也替你理得明明白白。
         </p>
         <form className="congyu-welcome-composer" onSubmit={props.onSubmit}>
           <Sparkles size={20} />
@@ -284,7 +287,7 @@ function WelcomeStage(props: Props) {
         <span className="congyu-hero-insignia" aria-hidden="true">CONGYU<br /><i>羽翼调查员</i></span>
         <CongyuArtwork scene="welcome" className="congyu-desktop-hero" sizes="(max-width: 840px) 0px, 46vw" />
         <CongyuArtwork scene="mobile-welcome" className="congyu-mobile-hero" sizes="(max-width: 840px) 320px, 0px" />
-        <span className="congyu-hero-caption"><b>琮羽</b><small>校园里的线索，由我来替你理清。</small></span>
+        <span className="congyu-hero-caption"><b>琮羽</b><small>别急，校园里的线索，我会一条条替你理顺。</small></span>
       </div>
     </section>
   );
@@ -416,6 +419,9 @@ function AnswerCard({ answer, ...props }: Props & { answer: AgentAnswer }) {
           }}
         >{citationMarkdown(answer.answer_markdown)}</ReactMarkdown>
       </div>
+      {answer.question_offer && (
+        <QuestionOfferPanel answerId={answer.answer_id} offer={answer.question_offer} />
+      )}
       {answer.assumptions.length > 0 && <aside className="congyu-uncertainty"><CircleAlert size={15} />{answer.assumptions.join("；")}</aside>}
       {answer.next_actions.length > 0 && (
         <div className="congyu-next-actions"><p>可以收进待办</p>{answer.next_actions.map((action, index) => (

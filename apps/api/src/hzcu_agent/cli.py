@@ -377,10 +377,7 @@ async def _pilot_preflight(database: Database, settings) -> int:
             else "campus_search_fts_v1"
         )
         fts_exists = await session.scalar(
-            text(
-                "SELECT count(*) FROM sqlite_master "
-                "WHERE type='table' AND name=:search_table"
-            ),
+            text("SELECT count(*) FROM sqlite_master WHERE type='table' AND name=:search_table"),
             {"search_table": search_table},
         )
         add(
@@ -389,9 +386,7 @@ async def _pilot_preflight(database: Database, settings) -> int:
             f"{search_table}:present" if fts_exists else f"{search_table}:missing",
         )
         searchable = (
-            await session.scalar(text(f"SELECT count(*) FROM {search_table}"))
-            if fts_exists
-            else 0
+            await session.scalar(text(f"SELECT count(*) FROM {search_table}")) if fts_exists else 0
         )
         add("search.document_versions", int(searchable or 0) > 0, int(searchable or 0))
         enabled_sources = await session.scalar(

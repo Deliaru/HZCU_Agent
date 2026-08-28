@@ -230,6 +230,12 @@ $advertisedHost = if ($WebHost -eq "0.0.0.0" -and $lanAddresses.Count -gt 0) {
 } else {
     $WebHost
 }
+# Local administrator credentials are intentionally used from the loopback UI.
+# Keep its canonical login origin stable even when an active LAN adapter exists;
+# login origin validation is stricter than CORS and compares this URL exactly.
+if ($LocalAdmin) {
+    $advertisedHost = "127.0.0.1"
+}
 $configuredCorsOrigins = @(
     $env:HZCU_CORS_ORIGINS -split "," |
         ForEach-Object { $_.Trim() } |
