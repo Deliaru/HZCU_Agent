@@ -25,6 +25,7 @@
 | 画像、待办与反馈 | Profile、Todo、Feedback API 与“我的空间” | 已实现 |
 | 来源账本 | Sources API 与 Source Observatory | 已实现 |
 | 桌面与移动 Web | Next.js Web | 已实现 |
+| 简洁/琮羽双主题与设备端偏好 | ThemeProvider、ThemePicker、CongyuAgentView、CongyuSourceLibrary、CongyuArtwork | 已实现 |
 | 真实模型配置 | OpenAI-compatible Model Gateway、`hzcu-agent serve` | 已实现并在本地真实调用验证 |
 | 单机数据持久化 | SQLite、snapshots、迁移 | 已实现并完成 API 重启恢复验证 |
 | CA/VPN/运营台 | Auth、sidecar、admin API/Web | 可选已有能力，不阻塞本地试用 |

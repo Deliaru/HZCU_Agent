@@ -40,7 +40,9 @@ import type {
 } from "@/lib/api";
 
 import { AppChrome } from "./app-chrome";
+import { CongyuSourceLibrary } from "./congyu-source-library";
 import { IdentityControl } from "./identity-control";
+import { useTheme } from "./theme-provider";
 
 function formatDateTime(value: string | null): string {
   if (!value) return "尚未同步";
@@ -110,7 +112,7 @@ function statusLabel(value: string | null): string {
   );
 }
 
-export function SourceObservatory() {
+function useSourceObservatoryController() {
   const [sources, setSources] = useState<SourceStatus[]>([]);
   const [selectedId, setSelectedId] = useState<string>();
   const [resources, setResources] = useState<SourceResource[]>([]);
@@ -274,6 +276,90 @@ export function SourceObservatory() {
   const selectedResource = resources.find(
     (resource) => resource.resource_id === selectedResourceId,
   );
+
+  return {
+    sources,
+    selectedId,
+    resources,
+    alerts,
+    selectedResourceId,
+    versions,
+    compareFromId,
+    comparison,
+    loading,
+    resourceLoading,
+    historyLoading,
+    authSession,
+    authBusy,
+    error,
+    selected,
+    totals,
+    selectedResource,
+    setAuthSession,
+    setSelectedId,
+    setSelectedResourceId,
+    loadSources,
+    handleLogout,
+    selectComparisonBase,
+  };
+}
+
+export function SourceObservatory() {
+  const { theme } = useTheme();
+  const {
+    sources,
+    selectedId,
+    resources,
+    alerts,
+    selectedResourceId,
+    versions,
+    compareFromId,
+    comparison,
+    loading,
+    resourceLoading,
+    historyLoading,
+    authSession,
+    authBusy,
+    error,
+    selected,
+    totals,
+    selectedResource,
+    setAuthSession,
+    setSelectedId,
+    setSelectedResourceId,
+    loadSources,
+    handleLogout,
+    selectComparisonBase,
+  } = useSourceObservatoryController();
+
+  if (theme === "character") {
+    return (
+      <CongyuSourceLibrary
+        sources={sources}
+        selected={selected}
+        selectedId={selectedId}
+        resources={resources}
+        selectedResource={selectedResource}
+        selectedResourceId={selectedResourceId}
+        versions={versions}
+        compareFromId={compareFromId}
+        comparison={comparison}
+        alerts={alerts}
+        loading={loading}
+        resourceLoading={resourceLoading}
+        historyLoading={historyLoading}
+        error={error}
+        authSession={authSession}
+        authBusy={authBusy}
+        onSelectSource={setSelectedId}
+        onSelectResource={setSelectedResourceId}
+        onCompare={(versionId) => void selectComparisonBase(versionId)}
+        onRefresh={() => void loadSources()}
+        onLogout={() => void handleLogout()}
+        onAuthenticated={() => void loadSources()}
+      />
+    );
+  }
 
   return (
     <AppChrome

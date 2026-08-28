@@ -5,6 +5,7 @@ import {
   CircleX,
   ClipboardCheck,
   Plus,
+  Palette,
   Save,
   ShieldAlert,
   SlidersHorizontal,
@@ -27,6 +28,9 @@ import type {
   StudentProfile,
   UserTodo,
 } from "@/lib/api";
+import { CongyuArtwork } from "./congyu-artwork";
+import { useTheme } from "./theme-provider";
+import { ThemePicker } from "./theme-picker";
 
 const PROFILE_FIELDS: Array<{
   key: ProfileAttribute["attribute_key"];
@@ -81,6 +85,7 @@ function useDocumentScrollLock(locked: boolean) {
 }
 
 export function OnboardingPanel({ profile, onSaved }: OnboardingProps) {
+  const { theme } = useTheme();
   const [values, setValues] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const open = Boolean(profile && !profile.onboarding_completed);
@@ -109,6 +114,28 @@ export function OnboardingPanel({ profile, onSaved }: OnboardingProps) {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (theme === "character") {
+    return (
+      <div className="product-backdrop congyu-onboarding-backdrop">
+        <section className="congyu-onboarding-panel" role="dialog" aria-modal="true">
+          <div className="congyu-onboarding-character">
+            <div><p>FIRST FIELD NOTE / 00</p><h2>先认识一下，<br />以后会更懂你。</h2><span>这些资料只帮助琮羽给出更贴合你的建议，不会影响事实检索。</span></div>
+            <CongyuArtwork scene="onboarding" sizes="(max-width: 760px) 330px, 44vw" />
+          </div>
+          <div className="congyu-onboarding-form">
+            <header><span>PROFILE BOOKMARK</span><h2>填写你的校园书签</h2><p>全部可选，可以随时在“我的手帐”里修改或删除。</p></header>
+            <div className="profile-grid">
+              {PROFILE_FIELDS.map((field) => (
+                <label key={field.key}><span>{field.label}</span><input value={values[field.key] ?? ""} placeholder={field.placeholder} onChange={(event) => setValues((current) => ({ ...current, [field.key]: event.target.value }))} /></label>
+              ))}
+            </div>
+            <footer><button type="button" disabled={busy} onClick={() => void save(true)}>先跳过</button><button type="button" disabled={busy} onClick={() => void save()}><Save size={16} />保存并开始</button></footer>
+          </div>
+        </section>
+      </div>
+    );
   }
 
   return (
@@ -177,10 +204,16 @@ export function MySpacePanel({
   onPersonalDataDeleted,
   onError,
 }: SpaceProps) {
-  const [tab, setTab] = useState<"profile" | "todos" | "data">("profile");
+  const [tab, setTab] = useState<"profile" | "todos" | "interface" | "data">("profile");
   const [values, setValues] = useState<Record<string, string>>({});
   const [newTodo, setNewTodo] = useState("");
   const [busy, setBusy] = useState(false);
+  const {
+    theme,
+    setTheme,
+    showPrivacyNotice,
+    withdrawPrivacyConsent,
+  } = useTheme();
 
   useEffect(() => {
     const confirmed = Object.fromEntries(
@@ -255,8 +288,8 @@ export function MySpacePanel({
   }
 
   return (
-    <div className="product-backdrop">
-      <section className="product-panel space-panel" role="dialog" aria-modal="true">
+    <div className={`product-backdrop ${theme === "character" ? "congyu-space-backdrop" : ""}`}>
+      <section className={`product-panel space-panel ${theme === "character" ? "congyu-space-book" : ""}`} role="dialog" aria-modal="true">
         <header>
           <span>
             <SlidersHorizontal size={19} />
@@ -265,11 +298,19 @@ export function MySpacePanel({
             <p className="eyebrow">PERSONAL WORKSPACE</p>
             <h2>我的空间</h2>
           </div>
+          {theme === "character" && <CongyuArtwork scene="hello" sizes="112px" />}
           <button type="button" onClick={onClose} aria-label="关闭我的空间">
             <X size={20} />
           </button>
         </header>
         <nav aria-label="我的空间分区">
+          <button
+            type="button"
+            className={tab === "interface" ? "active" : ""}
+            onClick={() => setTab("interface")}
+          >
+            界面 <Palette size={13} />
+          </button>
           <button
             type="button"
             className={tab === "profile" ? "active" : ""}
@@ -453,6 +494,16 @@ export function MySpacePanel({
             </div>
           )}
 
+          {tab === "interface" && (
+            <ThemePicker
+              compact
+              value={theme}
+              onSelect={setTheme}
+              heading="选择界面主题"
+              description="立即生效并只保存在这台设备。删除个人数据不会重置主题。"
+            />
+          )}
+
           {tab === "data" && (
             <div className="space-data">
               <ShieldAlert size={25} />
@@ -461,13 +512,38 @@ export function MySpacePanel({
                 此操作会删除当前主体的会话、画像、待办和反馈。校园登录本身不会被删除，
                 但产品会回到全新状态。
               </p>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void destroyPersonalData()}
-              >
-                <Trash2 size={16} /> {busy ? "正在删除…" : "删除全部个人数据"}
-              </button>
+              <div className="space-privacy-actions">
+                <button
+                  className="privacy-review-action"
+                  type="button"
+                  onClick={showPrivacyNotice}
+                >
+                  查看隐私与来源声明
+                </button>
+                <button
+                  className="privacy-review-action"
+                  type="button"
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        "撤回同意后将退出当前产品界面，但不会自动删除既有数据。确定继续吗？",
+                      )
+                    ) {
+                      onClose();
+                      withdrawPrivacyConsent();
+                    }
+                  }}
+                >
+                  撤回同意
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void destroyPersonalData()}
+                >
+                  <Trash2 size={16} /> {busy ? "正在删除…" : "删除全部个人数据"}
+                </button>
+              </div>
             </div>
           )}
         </div>

@@ -58,10 +58,12 @@ import type {
 } from "@/lib/api";
 
 import { AppChrome } from "./app-chrome";
+import { CongyuAgentView } from "./congyu-agent-view";
 import { ConversationRail } from "./conversation-rail";
 import { EvidenceDesk } from "./evidence-desk";
 import { IdentityControl } from "./identity-control";
 import { MySpacePanel, OnboardingPanel } from "./product-panels";
+import { useTheme } from "./theme-provider";
 
 type Stage =
   | "idle"
@@ -191,7 +193,7 @@ function formatWait(seconds: number): string {
   return `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
 }
 
-export function CampusAgent() {
+function useCampusAgentController() {
   const [conversationId, setConversationId] = useState<string>();
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -916,6 +918,222 @@ export function CampusAgent() {
     }
   }
 
+  function handlePersonalDataDeleted() {
+    eventSourceRef.current?.close();
+    if (recoveryTimerRef.current) clearTimeout(recoveryTimerRef.current);
+    setProfile(null);
+    setTodos([]);
+    setMessages([]);
+    setConversationId(undefined);
+    setConversations([]);
+    setLiveEvidence([]);
+    setActiveEvidence(null);
+    setPlan(null);
+    setTraceActivities([]);
+    setCurrentTaskId(undefined);
+    setFailedTaskId(undefined);
+    setFeedbackState({});
+    workStartedAtRef.current = null;
+    setWaitSeconds(0);
+    setError(null);
+    setStage("idle");
+    setStatusText("个人数据已删除，当前为全新工作区");
+    void getProfile().then(setProfile).catch(() => {
+      setError("个人数据已删除，但初始化新画像失败，请刷新页面。");
+    });
+  }
+
+  return {
+    conversationId,
+    conversations,
+    messages,
+    input,
+    stage,
+    statusText,
+    queuePosition,
+    waitSeconds,
+    liveEvidence,
+    activeEvidence,
+    plan,
+    traceActivities,
+    health,
+    authSession,
+    profile,
+    todos,
+    currentTaskId,
+    failedTaskId,
+    authBusy,
+    loadingConversation,
+    railOpen,
+    evidenceOpen,
+    spaceOpen,
+    mergePrompt,
+    feedbackState,
+    error,
+    copiedTrace,
+    messageListRef,
+    dialogueEndRef,
+    traceStartedAtRef,
+    shouldFollowDialogueRef,
+    working,
+    quickQuestions,
+    setInput,
+    setRailOpen,
+    setEvidenceOpen,
+    setSpaceOpen,
+    setActiveEvidence,
+    setProfile,
+    setMergePrompt,
+    setError,
+    refreshTodos,
+    handleLogout,
+    handleAuthenticated,
+    newConversation,
+    submitQuestion,
+    loadConversation,
+    mergeIdentity,
+    handleCancel,
+    handleRetry,
+    handleReverify,
+    saveAction,
+    feedback,
+    onSubmit,
+    copyTraceId,
+    handlePersonalDataDeleted,
+  };
+}
+
+export function CampusAgent() {
+  const { theme } = useTheme();
+  const {
+    conversationId,
+    conversations,
+    messages,
+    input,
+    stage,
+    statusText,
+    queuePosition,
+    waitSeconds,
+    liveEvidence,
+    activeEvidence,
+    plan,
+    traceActivities,
+    health,
+    authSession,
+    profile,
+    todos,
+    currentTaskId,
+    failedTaskId,
+    authBusy,
+    loadingConversation,
+    railOpen,
+    evidenceOpen,
+    spaceOpen,
+    mergePrompt,
+    feedbackState,
+    error,
+    copiedTrace,
+    messageListRef,
+    dialogueEndRef,
+    traceStartedAtRef,
+    shouldFollowDialogueRef,
+    working,
+    quickQuestions,
+    setInput,
+    setRailOpen,
+    setEvidenceOpen,
+    setSpaceOpen,
+    setActiveEvidence,
+    setProfile,
+    setMergePrompt,
+    setError,
+    refreshTodos,
+    handleLogout,
+    handleAuthenticated,
+    newConversation,
+    submitQuestion,
+    loadConversation,
+    mergeIdentity,
+    handleCancel,
+    handleRetry,
+    handleReverify,
+    saveAction,
+    feedback,
+    onSubmit,
+    copyTraceId,
+    handlePersonalDataDeleted,
+  } = useCampusAgentController();
+
+  if (theme === "character") {
+    return (
+      <CongyuAgentView
+        conversationId={conversationId}
+        conversations={conversations}
+        messages={messages}
+        input={input}
+        stage={stage}
+        statusText={statusText}
+        queuePosition={queuePosition}
+        waitSeconds={waitSeconds}
+        liveEvidence={liveEvidence}
+        activeEvidence={activeEvidence}
+        plan={plan}
+        traceActivities={traceActivities}
+        traceStartedAt={traceStartedAtRef.current}
+        health={health}
+        authSession={authSession}
+        authBusy={authBusy}
+        profile={profile}
+        todos={todos}
+        currentTaskId={currentTaskId}
+        failedTaskId={failedTaskId}
+        loadingConversation={loadingConversation}
+        railOpen={railOpen}
+        evidenceOpen={evidenceOpen}
+        spaceOpen={spaceOpen}
+        mergePrompt={mergePrompt}
+        feedbackState={feedbackState}
+        error={error}
+        copiedTrace={copiedTrace}
+        working={working}
+        quickQuestions={quickQuestions}
+        messageListRef={messageListRef}
+        dialogueEndRef={dialogueEndRef}
+        onInput={setInput}
+        onSubmit={onSubmit}
+        onQuestion={(question) => void submitQuestion(question)}
+        onNew={newConversation}
+        onLoadConversation={(id) => void loadConversation(id)}
+        onRailOpen={setRailOpen}
+        onEvidenceOpen={setEvidenceOpen}
+        onSpaceOpen={setSpaceOpen}
+        onEvidence={setActiveEvidence}
+        onLogout={() => void handleLogout()}
+        onAuthenticated={() => void handleAuthenticated()}
+        onMerge={() => void mergeIdentity()}
+        onDismissMerge={() => setMergePrompt(false)}
+        onCancel={() => void handleCancel()}
+        onRetry={() => void handleRetry()}
+        onReverify={(answerId) => void handleReverify(answerId)}
+        onSaveAction={(answer, action, index) => void saveAction(answer, action, index)}
+        onFeedback={(answerId, rating) => void feedback(answerId, rating)}
+        onConfirmSuggestion={(attributeId) => {
+          void resolveProfileSuggestion(attributeId, "confirm").then(async () => {
+            setProfile(await getProfile());
+          });
+        }}
+        onProfile={setProfile}
+        onTodosChanged={refreshTodos}
+        onPersonalDataDeleted={handlePersonalDataDeleted}
+        onError={setError}
+        onCopyTrace={(value) => void copyTraceId(value)}
+        onDialogueScroll={(following) => {
+          shouldFollowDialogueRef.current = following;
+        }}
+      />
+    );
+  }
+
   return (
     <AppChrome
       section="agent"
@@ -1510,30 +1728,7 @@ export function CampusAgent() {
         onClose={() => setSpaceOpen(false)}
         onProfile={setProfile}
         onTodosChanged={refreshTodos}
-        onPersonalDataDeleted={() => {
-          eventSourceRef.current?.close();
-          if (recoveryTimerRef.current) clearTimeout(recoveryTimerRef.current);
-          setProfile(null);
-          setTodos([]);
-          setMessages([]);
-          setConversationId(undefined);
-          setConversations([]);
-          setLiveEvidence([]);
-          setActiveEvidence(null);
-          setPlan(null);
-          setTraceActivities([]);
-          setCurrentTaskId(undefined);
-          setFailedTaskId(undefined);
-          setFeedbackState({});
-          workStartedAtRef.current = null;
-          setWaitSeconds(0);
-          setError(null);
-          setStage("idle");
-          setStatusText("个人数据已删除，当前为全新工作区");
-          void getProfile().then(setProfile).catch(() => {
-            setError("个人数据已删除，但初始化新画像失败，请刷新页面。");
-          });
-        }}
+        onPersonalDataDeleted={handlePersonalDataDeleted}
         onError={setError}
       />
     </AppChrome>

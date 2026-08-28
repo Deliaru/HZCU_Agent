@@ -1,0 +1,201 @@
+.privacy-notice-backdrop {
+  position: fixed;
+  z-index: 1400;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  background:
+    radial-gradient(circle at 82% 10%, rgba(83, 162, 220, .24), transparent 30%),
+    linear-gradient(145deg, rgba(7, 29, 50, .95), rgba(18, 55, 85, .92));
+  backdrop-filter: blur(18px);
+}
+
+.privacy-notice-panel {
+  width: min(920px, 100%);
+  max-height: min(880px, calc(100svh - 32px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid rgba(110, 164, 205, .28);
+  border-radius: 24px 7px 24px 7px;
+  color: #173a5e;
+  background: #fffdf7;
+  box-shadow: 0 34px 110px rgba(0, 17, 32, .42), inset 8px 0 0 #e4bd67;
+}
+
+.privacy-notice-panel > header {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 15px;
+  padding: 22px 28px 19px;
+  border-bottom: 1px solid rgba(36, 82, 116, .15);
+  background: linear-gradient(105deg, #eaf7fd, #fff9eb);
+}
+
+.privacy-notice-panel > header > span {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 50% 50% 50% 13px;
+  color: #fff;
+  background: linear-gradient(145deg, #143f67, #347fb4);
+}
+
+.privacy-notice-panel header p:first-child {
+  margin: 0;
+  color: #65839b;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .18em;
+}
+
+.privacy-notice-panel h1 {
+  margin: 5px 0 4px;
+  font: 800 clamp(24px, 3.2vw, 34px)/1.2 "Noto Serif SC", serif;
+  letter-spacing: -.035em;
+}
+
+.privacy-notice-panel header p:last-child {
+  max-width: 720px;
+  margin: 0;
+  color: #617b8e;
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.privacy-notice-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 28px 24px 34px;
+  background: repeating-linear-gradient(0deg, transparent 0 31px, rgba(42, 94, 129, .045) 31px 32px);
+  scrollbar-color: #8db7d0 transparent;
+}
+
+.privacy-notice-scroll > section {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 12px;
+  padding: 17px 0;
+  border-bottom: 1px dashed rgba(45, 80, 99, .18);
+}
+
+.privacy-notice-scroll > section > i {
+  padding-top: 4px;
+  color: #ae8b4c;
+  font: 800 9px/1 var(--font-mono);
+  font-style: normal;
+  letter-spacing: .12em;
+}
+
+.privacy-notice-scroll h2 {
+  margin: 0 0 8px;
+  color: #153c5f;
+  font: 700 17px/1.3 "Noto Serif SC", serif;
+}
+
+.privacy-notice-scroll p,
+.privacy-notice-scroll li {
+  color: #49677d;
+  font-size: 12px;
+  line-height: 1.82;
+}
+
+.privacy-notice-scroll p { margin: 7px 0 0; }
+.privacy-notice-scroll ul { margin: 0; padding-left: 18px; }
+.privacy-notice-scroll li + li { margin-top: 5px; }
+.privacy-notice-scroll b { color: #224e70; }
+.privacy-notice-scroll a { display: inline-flex; align-items: center; gap: 3px; margin-inline: 4px; color: #196d9f; font-weight: 800; }
+
+.privacy-notice-warning {
+  padding: 9px 11px;
+  border-left: 3px solid #df7478;
+  color: #754f57 !important;
+  background: #fff1f1;
+}
+
+.privacy-notice-scroll > aside {
+  margin: 18px 0 0 46px;
+  padding: 11px 13px;
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(41, 94, 129, .14);
+  background: rgba(235, 247, 252, .8);
+}
+
+.privacy-notice-scroll > aside b { font-size: 11px; }
+.privacy-notice-scroll > aside span { color: #60798b; font-size: 10px; line-height: 1.65; }
+
+.privacy-notice-panel > footer {
+  min-height: 82px;
+  padding: 14px 24px 14px 30px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  border-top: 1px solid rgba(36, 82, 116, .16);
+  background: #f7fbfd;
+}
+
+.privacy-notice-panel > footer label {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-right: auto;
+  color: #3e5f77;
+  font-size: 11px;
+  line-height: 1.6;
+  cursor: pointer;
+}
+
+.privacy-notice-panel > footer input {
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  margin-top: 1px;
+  accent-color: #276fa6;
+}
+
+.privacy-notice-panel > footer button {
+  min-height: 44px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 13px 4px 13px 4px;
+  color: #fff;
+  background: linear-gradient(135deg, #16466f, #2e7db6);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.privacy-notice-panel > footer button:disabled { opacity: .42; cursor: not-allowed; }
+
+.space-privacy-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.space-privacy-actions button { margin-top: 12px; }
+.space-privacy-actions .privacy-review-action { border-color: #3677a6; color: #3677a6; }
+.space-privacy-actions .privacy-review-action:hover { color: #fff; background: #3677a6; }
+
+@media (max-width: 620px) {
+  .privacy-notice-backdrop { place-items: end center; padding: 7px; }
+  .privacy-notice-panel { width: 100%; max-height: calc(100svh - 14px); border-radius: 19px 5px 19px 5px; }
+  .privacy-notice-panel > header { grid-template-columns: 42px minmax(0, 1fr); gap: 11px; padding: 16px 15px 14px; }
+  .privacy-notice-panel > header > span { width: 40px; height: 40px; }
+  .privacy-notice-panel h1 { font-size: 23px; }
+  .privacy-notice-panel header p:last-child { font-size: 10px; }
+  .privacy-notice-scroll { padding: 8px 15px 18px 19px; }
+  .privacy-notice-scroll > section { grid-template-columns: 27px minmax(0, 1fr); gap: 7px; padding: 14px 0; }
+  .privacy-notice-scroll h2 { font-size: 16px; }
+  .privacy-notice-scroll p, .privacy-notice-scroll li { font-size: 11px; line-height: 1.75; }
+  .privacy-notice-scroll > aside { margin-left: 34px; }
+  .privacy-notice-panel > footer { min-height: 116px; padding: 11px 13px calc(11px + env(safe-area-inset-bottom)); display: grid; gap: 9px; }
+  .privacy-notice-panel > footer button { width: 100%; min-height: 45px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .privacy-notice-panel *, .privacy-notice-panel *::before, .privacy-notice-panel *::after { scroll-behavior: auto !important; transition: none !important; }
+}

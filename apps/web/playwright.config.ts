@@ -11,18 +11,17 @@ export default defineConfig({
   reporter: [["list"], ["html", { outputFolder: "../../output/playwright/report" }]],
   use: {
     baseURL: process.env.PILOT_E2E_BASE_URL ?? "http://127.0.0.1:3000",
-    launchOptions: executablePath ? { executablePath } : undefined,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
   projects: [
     {
       name: "desktop-chromium",
-      use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 1000 } },
+      use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 1000 }, launchOptions: executablePath ? { executablePath } : undefined },
     },
     {
       name: "android-chrome",
-      use: { ...devices["Pixel 7"], viewport: { width: 390, height: 844 } },
+      use: { ...devices["Pixel 7"], viewport: { width: 390, height: 844 }, launchOptions: executablePath ? { executablePath } : undefined },
     },
     {
       name: "mobile-webkit",

@@ -20,6 +20,8 @@ import {
   setupLocalAdmin,
   type AuthSession,
 } from "@/lib/api";
+import { CongyuArtwork } from "./congyu-artwork";
+import { useTheme } from "./theme-provider";
 
 const AUTH_ERRORS: Record<string, string> = {
   CAS_STATE_INVALID: "登录状态已经失效，请重新发起校园 CA 登录。",
@@ -28,6 +30,7 @@ const AUTH_ERRORS: Record<string, string> = {
 };
 
 export function LoginScreen() {
+  const { theme } = useTheme();
   const [session, setSession] = useState<AuthSession | null>(null);
   const [loadError, setLoadError] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -118,11 +121,21 @@ export function LoginScreen() {
     : "用校园 CA\n确认你的身份。";
 
   return (
-    <main className="login-shell">
+    <main className={theme === "character" ? "congyu-login" : "login-shell"}>
       <section className="login-poster" aria-label="城知系统管理身份入口">
+        {theme === "character" && (
+          <div className="congyu-login-character">
+            <div className="congyu-login-character-copy">
+              <p>SECURE CAMPUS GATE / 04</p>
+              <h2>欢迎回来，<br />调查员。</h2>
+              <span>确认身份后，就能继续使用校园资料权限与管理工具。</span>
+            </div>
+            <CongyuArtwork scene="mobile-welcome" sizes="min(44vw, 500px)" />
+          </div>
+        )}
         <a className="login-brand" href="/" aria-label="返回城知首页">
-          <span>城</span><span>知</span>
-          <small>HZCU CAMPUS INTELLIGENCE</small>
+          <span>{theme === "character" ? "琮" : "城"}</span><span>{theme === "character" ? "羽" : "知"}</span>
+          <small>{theme === "character" ? "CONGYU CAMPUS AGENT" : "HZCU CAMPUS INTELLIGENCE"}</small>
         </a>
         <div className="login-poster-copy">
           <span>ADMINISTRATION CHANNEL / 01</span>

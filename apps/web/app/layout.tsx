@@ -10,6 +10,12 @@ import "../styles/login.css";
 import "../styles/responsive.css";
 import "../styles/blue-white.css";
 import "../styles/experience.css";
+import "../styles/theme-picker.css";
+import "../styles/privacy-notice.css";
+import "../styles/theme-character.css";
+
+import { ThemeProvider } from "@/components/theme-provider";
+import { THEME_INIT_SCRIPT } from "@/lib/theme";
 
 export const metadata: Metadata = {
   title: "城知｜浙大城市学院校园 Agent",
@@ -29,8 +35,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN">
-      <body>{children}</body>
+    <html lang="zh-CN" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
+      <body>
+        <ThemeProvider>{children}</ThemeProvider>
+      </body>
     </html>
   );
 }

@@ -76,4 +76,12 @@
   --ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
   --transition-fast: 180ms var(--ease-standard);
   --transition-panel: 480ms var(--ease-out);
+
+  /* Stable semantic aliases consumed by optional visual themes. */
+  --theme-canvas: var(--canvas);
+  --theme-surface: var(--surface);
+  --theme-text: var(--ink);
+  --theme-primary: var(--signal-yellow);
+  --theme-accent: var(--signal-cyan);
+  --theme-radius-card: var(--radius-md);
 }
