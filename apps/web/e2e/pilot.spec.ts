@@ -314,6 +314,19 @@ test("character investigation room keeps notebook and mobile status in budget", 
     const composerHeight = await page.locator(".congyu-room-composer").evaluate((element) => element.getBoundingClientRect().height);
     expect(composerHeight).toBeGreaterThanOrEqual(76);
   }
+
+  const composerSurface = await page.locator(".congyu-room-composer").evaluate((element) => ({
+    outer: getComputedStyle(element).backgroundImage,
+    inner: getComputedStyle(element.firstElementChild as Element).backgroundImage,
+  }));
+  expect(composerSurface.outer).toContain("gradient");
+  expect(composerSurface.inner).toContain("gradient");
+
+  await page.reload();
+  await expect(page.locator(".congyu-welcome-stage")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".congyu-agent-room")).toHaveCount(0);
+  await page.getByRole("button", { name: "打开会话列表" }).click();
+  await expect(page.locator(".congyu-history-drawer > div > button").first()).toBeVisible();
 });
 
 test("character sources and login use dedicated page compositions", async ({ page }) => {
@@ -364,10 +377,15 @@ test("anonymous pilot completes question, evidence and history journey", async (
   await expect(page.locator(".agent-message .markdown")).not.toBeEmpty();
 
   await page.reload();
-  await expect(page.locator(".agent-message")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByLabel("输入校园问题")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".agent-message")).toHaveCount(0);
   await expect(page.locator(".onboarding-backdrop")).toHaveCount(0, {
     timeout: 10_000,
   });
+  const mobileHistory = page.getByRole("button", { name: "打开会话历史" });
+  if (await mobileHistory.isVisible()) await mobileHistory.click();
+  await page.locator(".conversation-rail .thread-index > button").first().click();
+  await expect(page.locator(".agent-message")).toBeVisible({ timeout: 30_000 });
   await page.getByRole("button", { name: /有帮助/ }).last().click();
 });
 

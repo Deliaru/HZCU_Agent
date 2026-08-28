@@ -659,7 +659,7 @@ function useCampusAgentController() {
         if (cancelled) return;
         setAuthSession(session);
         setMergePrompt(session.authenticated && session.visitor_data_available);
-        const [nextHealth, nextProfile, nextTodos, history] = await Promise.all([
+        const [nextHealth, nextProfile, nextTodos] = await Promise.all([
           getHealth(),
           getProfile(),
           getTodos(),
@@ -669,7 +669,6 @@ function useCampusAgentController() {
         setHealth(nextHealth);
         setProfile(nextProfile);
         setTodos(nextTodos);
-        if (history[0]) await loadConversation(history[0].conversation_id);
       } catch {
         if (!cancelled) setError("身份与 Agent 服务暂时无法连接。");
       }
@@ -693,7 +692,7 @@ function useCampusAgentController() {
       eventSourceRef.current?.close();
       if (recoveryTimerRef.current) clearTimeout(recoveryTimerRef.current);
     };
-  }, [loadConversation, refreshHistory]);
+  }, [refreshHistory]);
 
   useEffect(() => {
     if (!working) return;
