@@ -1,7 +1,7 @@
 # HZCU Campus Agent
 
 面向浙大城市学院学生的 **Model-native Campus Agent**。  
-项目不是传统 FAQ / 关键词问答，也不是“知识库 + 大模型”的简单套壳，而是让模型保留用户原始问题与上下文，自主规划调查步骤，通过受控工具读取校园资料，在证据充分后生成可追溯回答。
+项目理念为：让模型保留用户原始问题与上下文，自主规划调查步骤，通过受控工具读取校园资料，在证据充分后生成可追溯回答。主张替代传统 FAQ / 关键词问答或是“知识库 + 大模型”的简单套壳。
 
 **Next.js 16 · React 19 · TypeScript · FastAPI · Python 3.12 · SQLite FTS5 · SSE · OpenAI Responses / Anthropic Messages · Docker**
 
