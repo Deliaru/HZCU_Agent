@@ -62,7 +62,7 @@ HZCU Agent 不把问题先压成一个固定意图标签，而是执行完整调
 
 ### 系统架构
 
-\`\`\`mermaid
+```mermaid
 flowchart TB
     USER["Student / Browser"] --> WEB["Next.js 16 + React 19<br/>Web / Mobile UI"]
     WEB -->|"REST + SSE"| API["FastAPI API"]
@@ -91,11 +91,11 @@ flowchart TB
     WORKER --> PARSE["Parse / Normalize / Hash / Version"]
     PARSE --> DB
     PARSE --> SNAP
-\`\`\`
+```
 
 ### Agent 执行链路
 
-\`\`\`mermaid
+```mermaid
 flowchart LR
     Q["原始问题 + 对话 + 时间 + 已确认画像"]
     Q --> PREP["Semantic understanding<br/>多假设理解"]
@@ -107,7 +107,7 @@ flowchart LR
     CHECK -->|"Yes"| DRAFT["Grounded answer"]
     DRAFT --> VERIFY["Claim / citation verification"]
     VERIFY --> ANSWER["Answer + Sources + Next actions"]
-\`\`\`
+```
 
 这里的核心设计是：**模型负责理解、规划和材料取舍；代码负责工具、权限、预算、证据与安全边界。**  
 正常路径不会把校园问题硬编码成“问题分类 → 固定来源 → 模板答案”。
@@ -135,19 +135,19 @@ flowchart LR
 
 普通校园问答很容易变成：
 
-\`\`\`text
+```text
 用户问题
   → 意图分类
   → 向量库 Top-K
   → 拼 Prompt
   → 生成答案
-\`\`\`
+```
 
 这对“今年 / 我这个年级 / 这个学院 / 现在是否仍有效 / 两份通知冲突”之类问题并不可靠。
 
 HZCU Agent 更接近一个受约束的调查型 Agent：
 
-\`\`\`text
+```text
 理解真实问题
   → 建立可修正假设
   → 规划调查路径
@@ -157,7 +157,7 @@ HZCU Agent 更接近一个受约束的调查型 Agent：
   → 必要时继续调查
   → 对事实声明逐项绑定证据
   → 输出可追溯答案
-\`\`\`
+```
 
 校园知识库在这里是 **长期记忆与现实缓存**，而不是 Agent 的“大脑”。
 
@@ -165,7 +165,7 @@ HZCU Agent 更接近一个受约束的调查型 Agent：
 
 ## Data & Evidence Pipeline
 
-\`\`\`mermaid
+```mermaid
 flowchart LR
     REG["Source Registry"] --> DISCOVER["发现资源"]
     DISCOVER --> FETCH["条件请求 / API / 导入"]
@@ -176,7 +176,7 @@ flowchart LR
     PARSE --> VERSION["不可变 Document Version"]
     VERSION --> INDEX["FTS / chunks / entities"]
     INDEX --> SEARCH["Agent Search / Read Tools"]
-\`\`\`
+```
 
 当前数据链路重点保证：
 
@@ -236,7 +236,7 @@ flowchart LR
 
 ## Repository Structure
 
-\`\`\`text
+```text
 HZCU_Agent/
 ├─ apps/
 │  ├─ api/
@@ -258,7 +258,7 @@ HZCU_Agent/
 ├─ scripts/                  # Windows / Linux helpers
 ├─ docker-compose.yml
 └─ Makefile
-\`\`\`
+```
 
 ---
 
@@ -268,9 +268,9 @@ HZCU_Agent/
 
 不需要 WSL。PowerShell 脚本会创建独立虚拟环境、安装依赖、执行迁移并启动 API + Web：
 
-\`\`\`powershell
+```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\start-windows.ps1
-\`\`\`
+```
 
 默认启动 **no-key Demo mode**。终端会输出本机和局域网访问地址，手机与电脑在同一局域网即可直接访问。
 
@@ -285,18 +285,18 @@ powershell -ExecutionPolicy Bypass -File .\scripts\start-windows.ps1
 
 启动 API：
 
-\`\`\`bash
+```bash
 make api-install
 make api-migrate
 make api-dev
-\`\`\`
+```
 
 启动 Web：
 
-\`\`\`bash
+```bash
 make web-install
 make web-dev
-\`\`\`
+```
 
 默认访问：
 
@@ -305,11 +305,11 @@ make web-dev
 
 首次同步可使用：
 
-\`\`\`bash
+```bash
 .venv/bin/hzcu-agent list-sources
 .venv/bin/hzcu-agent sync-sources --limit 3
 .venv/bin/hzcu-agent search-memory "创新训练项目" --top-k 8
-\`\`\`
+```
 
 真实模型、本地管理员、CAS 与正式部署配置见 [本地试用与运行手册](docs/21-pilot-demo-runbook.md)。
 
@@ -317,18 +317,18 @@ make web-dev
 
 ## Verification
 
-\`\`\`bash
+```bash
 make api-test
 make web-build
-\`\`\`
+```
 
 前端还提供：
 
-\`\`\`bash
+```bash
 cd apps/web
 npm run typecheck
 npm run e2e
-\`\`\`
+```
 
 ---
 
