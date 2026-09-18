@@ -18,7 +18,7 @@ import {
   Server,
   ShieldCheck,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
 import {
@@ -28,6 +28,7 @@ import {
   getAdminModelConfiguration,
   getAdminOverview,
   getAdminTaskHealth,
+  getAdminTaskDetail,
   getAuthSession,
   logoutCampusSession,
   getSourceAlerts,
@@ -40,6 +41,7 @@ import type {
   AdminModelConfiguration,
   AdminConversationTrace,
   AdminOverview,
+  AdminTaskDetail,
   Feedback,
   ReasoningEffort,
   SourceAlert,
@@ -572,6 +574,7 @@ function TelemetryPanel({
   feedback: Feedback[];
   alerts: SourceAlert[];
 }) {
+  const [selectedTask, setSelectedTask] = useState<string | null>(null);
   return (
     <section className="admin-telemetry">
       <div className="admin-metrics">
@@ -586,9 +589,11 @@ function TelemetryPanel({
       <section className="admin-table">
         <header><div><p className="eyebrow">LATEST TASK HEALTH</p><h2>最近任务</h2></div><span>{tasks.length.toString().padStart(3, "0")} REC</span></header>
         <div className="admin-table-scroll"><table><thead><tr><th>任务</th><th>状态</th><th>模式</th><th>模型 / 工具</th><th>耗时</th><th>错误</th></tr></thead><tbody>
-          {tasks.map((task) => <tr key={task.task_id}><td><code>{task.task_id.slice(-10)}</code></td><td><i className={`task-state ${task.status}`}>{task.status}</i></td><td>{task.request_mode}</td><td>{task.model_call_count ?? "—"} / {task.tool_call_count ?? "—"}</td><td>{duration(task.total_duration_ms)}</td><td>{task.error_code ?? "—"}</td></tr>)}
+          {tasks.map((task) => <tr key={task.task_id}><td><button type="button" className="admin-task-open" onClick={() => setSelectedTask(task.task_id)} aria-pressed={selectedTask === task.task_id}><code>{task.task_id.slice(-10)}</code> 查看流程</button></td><td><i className={`task-state ${task.status}`}>{task.status}</i></td><td>{task.request_mode}</td><td>{task.model_call_count ?? "—"} / {task.tool_call_count ?? "—"}</td><td>{duration(task.total_duration_ms)}</td><td>{task.error_code ?? "—"}</td></tr>)}
         </tbody></table></div>
       </section>
+
+      {selectedTask ? <TaskDetailPanel key={selectedTask} taskId={selectedTask} onClose={() => setSelectedTask(null)} /> : null}
 
       <section className="admin-table">
         <header><div><p className="eyebrow">USER SIGNALS</p><h2>最近反馈</h2></div><span>{feedback.length.toString().padStart(3, "0")} REC</span></header>
@@ -601,6 +606,55 @@ function TelemetryPanel({
         <header><CircleAlert size={17} /><div><p className="eyebrow">SOURCE WATCH</p><h2>来源告警</h2></div></header>
         {alerts.length ? alerts.map((alert) => <article key={`${alert.source_id}-${alert.code}`}><i>{alert.severity}</i><span><b>{alert.source_name}</b><small>{alert.message}</small></span></article>) : <p>当前没有来源告警。</p>}
       </section>
+    </section>
+  );
+}
+
+function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => void }) {
+  const panelRef = useRef<HTMLElement>(null);
+  const [detail, setDetail] = useState<AdminTaskDetail | null>(null);
+  const [error, setError] = useState<string>();
+  const [loading, setLoading] = useState(true);
+  const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    panelRef.current?.focus({ preventScroll: true });
+    panelRef.current?.scrollIntoView({ block: "start" });
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(undefined);
+    getAdminTaskDetail(taskId).then((value) => {
+      if (!cancelled) setDetail(value);
+    }).catch((cause) => {
+      if (!cancelled) {
+        setDetail(null);
+        setError(cause instanceof Error ? cause.message : "任务详情加载失败");
+      }
+    }).finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [taskId, revision]);
+  return (
+    <section ref={panelRef} tabIndex={-1} className="admin-task-detail" aria-label="任务完成流程" aria-busy={loading}>
+      <header><h2>任务完成流程</h2><div><button type="button" disabled={loading} onClick={() => setRevision((value) => value + 1)}>刷新详情</button><button type="button" onClick={onClose}>收起</button></div></header>
+      <code>{taskId}</code>
+      {loading ? <p role="status">正在加载任务记录…</p> : null}
+      {error ? <p role="alert">{error}</p> : null}
+      {detail ? <>
+        <p>状态：{detail.status} · 模型：{detail.model_name ?? "未记录"} · 更新时间：{new Date(detail.updated_at).toLocaleString("zh-CN")}</p>
+        {detail.error_code ? <p role="alert">错误：{detail.error_code}</p> : null}
+        <h3>用户提问</h3><p className="admin-task-text">{detail.question ?? "未保存提问"}</p>
+        <h3>模型回答</h3><p className="admin-task-text">{detail.answer ?? "该任务尚无已保存的回答（可能进行中、失败或等待补充信息）。"}</p>
+        <h3>执行流程</h3>
+        <p>展示已保存的模型和工具调用阶段，不包含模型内部思维。</p>
+        {detail.spans.length ? <ol>{detail.spans.map((span, index) => <li key={index}><b>{span.kind === "model" ? "模型调用" : span.kind === "tool" ? "工具调用" : "本地处理"} · {span.name}</b><span>开始 +{duration(span.started_ms)} · 耗时 {duration(span.duration_ms)}</span></li>)}</ol> : <p>暂无已保存的执行阶段；历史或未完成任务可能没有这项记录。</p>}
+        <h3>检索材料（{detail.evidence.length}）</h3><p>以下为回答保存的证据材料，不代表全部检索候选文件。</p>
+        {detail.evidence.length ? detail.evidence.map((item) => <article key={item.evidence_id}>
+          <h4>{/^https?:\/\//i.test(item.url) ? <a href={item.url} target="_blank" rel="noopener noreferrer">{item.title}</a> : item.title}</h4>
+          <small>{item.publisher} · 文档版本：{item.document_version_id ?? "未记录"}</small>
+          <p className="admin-task-text">{item.excerpt}</p>
+        </article>) : <p>该任务暂无已保存的检索材料。</p>}
+      </> : null}
     </section>
   );
 }

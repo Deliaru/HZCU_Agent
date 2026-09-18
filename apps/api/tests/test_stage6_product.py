@@ -390,6 +390,7 @@ def test_ca_login_explicitly_merges_visitor_data_and_enables_admin_console(
         answer_id = task["answer_id"]
         detail_before_login = client.get(f"/api/v1/conversations/{visitor_conversation}").json()
         message_id = detail_before_login["messages"][0]["message_id"]
+        assert client.get(f"/api/v1/admin/tasks/{task_id}").status_code == 404
         assert (
             client.get(f"/api/v1/admin/conversation-trace/{visitor_conversation}").status_code
             == 404
@@ -415,6 +416,37 @@ def test_ca_login_explicitly_merges_visitor_data_and_enables_admin_console(
         assert client.get("/api/v1/admin/overview").status_code == 200
         assert client.get("/api/v1/admin/feedback").status_code == 200
         assert client.get("/api/v1/admin/task-health").status_code == 200
+
+        async def add_trace_evidence():
+            from hzcu_agent.models import EvidenceRecord, utc_now
+
+            async with client.app.state.database.session_factory() as session:
+                session.add(
+                    EvidenceRecord(
+                        id="evidence_admin_trace_test",
+                        answer_id=answer_id,
+                        title="测试选课通知.pdf",
+                        publisher="测试教务处",
+                        canonical_url="https://example.test/notice.pdf",
+                        excerpt="选课材料摘要",
+                        observed_at=utc_now(),
+                        source_id="test-source",
+                    )
+                )
+                await session.commit()
+
+        client.portal.call(add_trace_evidence)
+        task_detail = client.get(f"/api/v1/admin/tasks/{task_id}")
+        assert task_detail.status_code == 200
+        payload = task_detail.json()
+        assert payload["task_id"] == task_id
+        assert payload["question"] == "这条公开试用会话需要能够按 ID 追溯。"
+        assert payload["answer"]
+        assert payload["model_name"]
+        assert payload["spans"]
+        assert any(item["title"] == "测试选课通知.pdf" for item in payload["evidence"])
+        assert any(item["excerpt"] == "选课材料摘要" for item in payload["evidence"])
+        assert client.get("/api/v1/admin/tasks/task_missing").status_code == 404
         for trace_id in (visitor_conversation, message_id, task_id, answer_id):
             trace = client.get(f"/api/v1/admin/conversation-trace/{trace_id}")
             assert trace.status_code == 200
@@ -437,6 +469,7 @@ def test_ca_login_explicitly_merges_visitor_data_and_enables_admin_console(
             "admin.overview",
             "admin.feedback",
             "admin.task_health",
+            "admin.task_detail",
             "admin.conversation_trace",
             "admin.conversation_trace",
             "admin.conversation_trace",

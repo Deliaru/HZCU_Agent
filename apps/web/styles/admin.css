@@ -1248,3 +1248,38 @@
     animation: none;
   }
 }
+.admin-task-open {
+  cursor: pointer;
+  color: #1760a5;
+  background: transparent;
+  border: 1px solid #cbd9e8;
+  border-radius: 6px;
+  padding: 7px 10px;
+}
+
+.admin-task-detail {
+  padding: 24px;
+  border: 1px solid #d7e0eb;
+  border-radius: 12px;
+  background: #fff;
+  overflow-wrap: anywhere;
+}
+
+.admin-task-detail > header {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.admin-task-detail button {
+  cursor: pointer;
+  margin-left: 8px;
+  padding: 6px 12px;
+}
+
+.admin-task-detail h3 { margin-top: 24px; }
+.admin-task-detail article { border-top: 1px solid #d7e0eb; padding: 12px 0; }
+.admin-task-detail li { margin: 10px 0; }
+.admin-task-detail li span { display: block; color: #52677b; }
+.admin-task-text { white-space: pre-wrap; line-height: 1.7; }

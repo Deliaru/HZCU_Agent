@@ -230,6 +230,27 @@ export type AdminConversationTrace = ConversationDetail & {
   subject_kind: string | null;
 };
 
+export type AdminTaskDetail = {
+  task_id: string;
+  conversation_id: string;
+  status: string;
+  error_code: string | null;
+  created_at: string;
+  updated_at: string;
+  question: string | null;
+  answer: string | null;
+  model_name: string | null;
+  spans: Array<{ kind: string; name: string; started_ms: number; duration_ms: number | null }>;
+  evidence: Array<{
+    evidence_id: string; title: string; publisher: string; url: string;
+    excerpt: string; document_version_id: string | null;
+  }>;
+};
+
+export async function getAdminTaskDetail(taskId: string): Promise<AdminTaskDetail> {
+  return apiFetch(`/admin/tasks/${encodeURIComponent(taskId)}`, { cache: "no-store" });
+}
+
 export type ProfileAttribute = {
   attribute_id: string;
   attribute_key:

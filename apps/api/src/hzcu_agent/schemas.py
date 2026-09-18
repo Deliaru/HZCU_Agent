@@ -864,6 +864,36 @@ class AdminTaskHealthItem(BaseModel):
     created_at: datetime
 
 
+class AdminTaskSpan(BaseModel):
+    kind: str
+    name: str
+    started_ms: float
+    duration_ms: float | None = None
+
+
+class AdminTaskEvidence(BaseModel):
+    evidence_id: str
+    title: str
+    publisher: str
+    url: str
+    excerpt: str
+    document_version_id: str | None
+
+
+class AdminTaskDetailResponse(BaseModel):
+    task_id: str
+    conversation_id: str
+    status: str
+    error_code: str | None
+    created_at: datetime
+    updated_at: datetime
+    question: str | None
+    answer: str | None
+    model_name: str | None
+    spans: list[AdminTaskSpan]
+    evidence: list[AdminTaskEvidence]
+
+
 class AdminTaskHealthResponse(BaseModel):
     items: list[AdminTaskHealthItem]
 

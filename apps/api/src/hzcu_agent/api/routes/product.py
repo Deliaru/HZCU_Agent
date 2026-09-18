@@ -15,6 +15,7 @@ from hzcu_agent.models import (
     AnswerRecord,
     CommunityQuestion,
     Conversation,
+    EvidenceRecord,
     Message,
     ProductSubject,
     ProfileAttribute,
@@ -31,6 +32,7 @@ from hzcu_agent.observability import request_id_context
 from hzcu_agent.schemas import (
     AdminConversationTraceResponse,
     AdminOverviewResponse,
+    AdminTaskDetailResponse,
     AdminTaskHealthItem,
     AdminTaskHealthResponse,
     ConversationMessageResponse,
@@ -484,9 +486,7 @@ async def merge_visitor_identity(
     visitor_questions = list(
         (
             await session.scalars(
-                select(CommunityQuestion).where(
-                    CommunityQuestion.owner_subject_id == visitor_id
-                )
+                select(CommunityQuestion).where(CommunityQuestion.owner_subject_id == visitor_id)
             )
         ).all()
     )
@@ -684,6 +684,58 @@ async def admin_task_health(
             )
             for task, performance in rows
         ]
+    )
+
+
+@router.get("/admin/tasks/{task_id}", response_model=AdminTaskDetailResponse)
+async def admin_task_detail(
+    task_id: str,
+    session: SessionDependency,
+    principal: PrincipalDependency,
+) -> AdminTaskDetailResponse:
+    _require_admin(principal)
+    task = await session.get(AgentTask, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    await _record_admin_read(session, principal, "admin.task_detail")
+    message = await session.get(Message, task.user_message_id)
+    answer = await session.scalar(select(AnswerRecord).where(AnswerRecord.task_id == task.id))
+    performance = await session.get(TaskPerformanceRecord, task.id)
+    evidence = (
+        list(
+            (
+                await session.scalars(
+                    select(EvidenceRecord)
+                    .where(EvidenceRecord.answer_id == answer.id)
+                    .order_by(EvidenceRecord.id)
+                )
+            ).all()
+        )
+        if answer
+        else []
+    )
+    return AdminTaskDetailResponse(
+        task_id=task.id,
+        conversation_id=task.conversation_id,
+        status=task.status,
+        error_code=task.error_code,
+        created_at=_as_utc(task.created_at),
+        updated_at=_as_utc(task.updated_at),
+        question=clean_product_text(message.content) if message else None,
+        answer=clean_product_text(answer.answer_markdown) if answer else None,
+        model_name=answer.model_name if answer else None,
+        spans=performance.spans if performance else [],
+        evidence=[
+            {
+                "evidence_id": item.id,
+                "title": clean_product_text(item.title),
+                "publisher": item.publisher,
+                "url": item.canonical_url,
+                "excerpt": clean_product_text(item.excerpt),
+                "document_version_id": item.document_version_id,
+            }
+            for item in evidence
+        ],
     )
 
 
