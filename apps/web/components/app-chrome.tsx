@@ -142,9 +142,8 @@ export function AppChrome({
           </div>
 
           <a className="brand" href="/" aria-label="城知首页">
-            <span className="brand-seal" aria-hidden="true">
-              <b>城</b>
-              <b>知</b>
+            <span className="brand-seal brand-mascot" aria-hidden="true">
+              <img src="/themes/hzcu-girl/brand-smile.webp" alt="" width={48} height={48} />
             </span>
             <span className="brand-copy">
               <strong>校园认知 Agent</strong>

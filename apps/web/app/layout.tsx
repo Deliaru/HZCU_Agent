@@ -13,6 +13,7 @@ import "../styles/experience.css";
 import "../styles/theme-picker.css";
 import "../styles/privacy-notice.css";
 import "../styles/theme-character.css";
+import "../styles/agent-readability.css";
 
 import { ThemeProvider } from "@/components/theme-provider";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";

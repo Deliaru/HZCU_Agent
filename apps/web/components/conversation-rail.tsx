@@ -60,11 +60,13 @@ export function ConversationRail({
         <span>THREADS</span>
         06
       </div>
-      <button className="new-thread" type="button" onClick={onNew}>
-        <MessageSquarePlus size={17} />
-        新对话
-        <span>NEW</span>
-      </button>
+      <div className="new-thread-slot">
+        <button className="new-thread" type="button" onClick={onNew}>
+          <MessageSquarePlus size={17} />
+          新对话
+          <span>NEW</span>
+        </button>
+      </div>
       <div className="rail-runtime">
         <p className="eyebrow">SYSTEM STATUS</p>
         <div>

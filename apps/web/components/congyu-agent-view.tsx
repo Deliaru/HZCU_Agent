@@ -268,7 +268,7 @@ function WelcomeStage(props: Props) {
               }
             }}
             placeholder="告诉琮羽，你想查清什么？"
-            rows={2}
+            rows={1}
             aria-label="输入校园问题"
           />
           <button type="submit" disabled={!props.input.trim()} aria-label="开始调查">
@@ -367,7 +367,7 @@ function InvestigationRoom(props: Props & { stageCopy: (typeof STAGE_COPY)[Congy
                 }
               }}
               placeholder="继续追问，或交给琮羽一条新线索……"
-              rows={2}
+              rows={1}
               disabled={props.working}
               aria-label="输入校园问题"
             />

@@ -1,0 +1,440 @@
+/* Shared reading contract for Agent views and shared application chrome.
+ * Keep this after the legacy theme layers: small text must not silently fall
+ * back to their 7–11px display styles at narrower viewport breakpoints.
+ */
+.app-chrome .brand-seal.brand-mascot {
+  display: block;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  clip-path: none;
+}
+
+.app-chrome .brand-mascot img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+:is(.app-chrome, .congyu-agent) {
+  --agent-text: 1rem;
+  --agent-label: 0.875rem;
+  --agent-caption: 0.75rem;
+  font-family: var(--font-ui);
+  font-size: var(--agent-text);
+  line-height: 1.65;
+  text-rendering: auto;
+  -webkit-font-smoothing: auto;
+}
+
+:is(.app-chrome, .congyu-agent) :is(button, input, textarea, select) {
+  font-family: var(--font-ui);
+  letter-spacing: normal;
+}
+
+:is(.stage6-shell, .congyu-agent) :is(pre, code) {
+  font-family: var(--font-mono);
+}
+
+.stage6-shell :is(.user-message > p, .markdown),
+.congyu-agent :is(.congyu-user-message > p, .congyu-answer-paper) {
+  font-family: var(--font-ui);
+  font-size: var(--agent-text);
+  font-weight: 400;
+  line-height: 1.8;
+  letter-spacing: normal;
+  overflow-wrap: anywhere;
+}
+
+.stage6-shell .composer textarea,
+.congyu-agent :is(.congyu-welcome-composer, .congyu-room-composer) textarea {
+  font-size: var(--agent-text);
+  font-weight: 400;
+  line-height: 1.6;
+}
+
+.stage6-shell :is(.eyebrow, .hero-register > span, .composer > p,
+  .hero-method span, .hero-method b, .thread-index small,
+  .rail-product-links small, .app-rail nav a small, .app-rail nav a span),
+.congyu-agent :is(.congyu-brand small, .congyu-chapter,
+  .congyu-room-header > p, .congyu-answer-card header p,
+  .congyu-answer-meta span, .congyu-answer-meta b,
+  .congyu-answer-card > footer > span, .congyu-answer-card > footer button,
+  .congyu-answer-card > footer summary, .congyu-room-composer > small,
+  .congyu-working-card header p, .congyu-working-card > footer,
+  .congyu-route-line span, .congyu-evidence-index small,
+  .congyu-notebook > footer, .congyu-empty-notes) {
+  font-family: var(--font-ui);
+  font-size: var(--agent-caption);
+  font-weight: 400;
+  line-height: 1.6;
+  letter-spacing: 0.02em;
+  color: #49617a;
+}
+
+.stage6-shell :is(.question-prompts button, .thread-index > button,
+  .rail-product-links b),
+.congyu-agent :is(.congyu-quick-questions button b, .congyu-activity-list p,
+  .congyu-evidence-index b, .congyu-notebook-tabs button) {
+  font-size: var(--agent-label);
+  line-height: 1.6;
+}
+
+/* Functional headings share the UI face; the character's large welcome
+ * title remains an intentional display treatment, not a body-text fallback. */
+.congyu-agent :is(.congyu-room-header h1, .congyu-answer-card header h2,
+  .congyu-working-card h2, .congyu-notebook > header h2,
+  .congyu-evidence-page h3) {
+  font-family: var(--font-ui);
+  font-weight: 700;
+  letter-spacing: normal;
+  line-height: 1.4;
+}
+
+/* Minimal navigation: same light material as the conversation sidebar. */
+:root[data-theme="minimal"] .app-chrome .app-rail {
+  background: #f2f6fb;
+  color: #294665;
+  border-right: 1px solid #dce3eb;
+  box-shadow: none;
+}
+
+:root[data-theme="minimal"] .app-chrome .app-rail::after {
+  display: none;
+}
+
+:root[data-theme="minimal"] .app-chrome :is(.app-rail-brand,
+  .app-rail-brand b, .app-rail-brand span, .app-rail-tail, .app-rail nav a) {
+  color: #294665;
+  border-color: #dce3eb;
+}
+
+:root[data-theme="minimal"] .app-chrome .app-rail nav a:is(:hover, .active) {
+  color: #173f68;
+  background: #dfeaf6;
+  border-color: #abc1d9;
+}
+
+:root[data-theme="minimal"] .app-chrome .app-rail nav a.active svg {
+  color: #285989;
+  filter: none;
+}
+
+/* Welcome content uses the available width instead of reserving a third
+ * for the decorative radar. Evidence remains available in its own panel. */
+.stage6-shell .conversation-rail .new-thread-slot {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  padding: 12px 9px;
+}
+
+.stage6-shell .conversation-rail .new-thread {
+  width: 100%;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 0 14px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.stage6-shell .conversation-rail .new-thread > span {
+  display: none;
+}
+
+.stage6-shell .conversation-rail .new-thread:hover {
+  padding: 0 14px;
+  transform: none;
+}
+
+/* Navigation is a quiet rail, not a stack of dashboard tiles. */
+:root[data-theme="minimal"] .app-chrome .app-rail nav {
+  gap: 14px;
+  padding: 20px 8px;
+}
+
+:root[data-theme="minimal"] .app-chrome .app-rail nav a {
+  min-height: 62px;
+  gap: 7px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #64758a;
+  transform: none;
+}
+
+:root[data-theme="minimal"] .app-chrome .app-rail nav a small {
+  display: none;
+}
+
+:root[data-theme="minimal"] .app-chrome .app-rail nav a:is(:hover, .active) {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #285989;
+  transform: none;
+}
+
+:root[data-theme="minimal"] .app-chrome .app-rail nav a::before {
+  top: 20px;
+  bottom: 20px;
+  left: -8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: #326ca8;
+  box-shadow: none;
+}
+
+:root[data-theme="minimal"] .app-chrome .app-rail nav a.active span {
+  color: #285989;
+  font-weight: 700;
+}
+
+:root[data-theme="minimal"] .app-chrome .app-rail nav a:focus-visible,
+.stage6-shell .conversation-rail .new-thread:focus-visible {
+  outline: 2px solid #326ca8;
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+.stage6-shell .is-welcome .hero-copy {
+  min-height: auto;
+  padding: clamp(24px, 3vw, 44px) clamp(20px, 3vw, 48px) 24px;
+  background: #f8fbff;
+}
+
+.stage6-shell .is-welcome .hero-copy::before,
+.stage6-shell .is-welcome .hero-copy::after,
+.stage6-shell .is-welcome .hero-wordmark,
+.stage6-shell .is-welcome .hero-index {
+  display: none;
+}
+
+.stage6-shell .is-welcome :is(.hero-register, .hero-copy h1,
+  .hero-copy > p, .hero-method) {
+  width: 100%;
+  max-width: 720px;
+}
+
+.stage6-shell .is-welcome .hero-register {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 20px;
+}
+
+.stage6-shell .is-welcome .hero-copy h1 {
+  font-size: clamp(40px, 4vw, 60px);
+  line-height: 1.15;
+  letter-spacing: normal;
+}
+
+.stage6-shell .is-welcome .hero-copy > p {
+  margin-top: 20px;
+  font-size: var(--agent-text);
+  line-height: 1.8;
+  color: #465a70;
+}
+
+.stage6-shell .composer-inner {
+  min-height: 72px;
+  border: 1px solid #779cc4;
+  background: #fff;
+  box-shadow: 0 6px 20px rgba(31, 58, 88, 0.12);
+}
+
+.stage6-shell .composer-inner:focus-within {
+  border-color: #285989;
+  box-shadow: 0 0 0 3px #d4e0ed, 0 6px 20px rgba(31, 58, 88, 0.12);
+}
+
+.stage6-shell .composer textarea::placeholder {
+  color: #526b85;
+  opacity: 1;
+}
+
+.stage6-shell .composer > p {
+  display: block;
+  margin: 10px 0 0;
+}
+
+@media (min-width: 841px) {
+  :root[data-theme="minimal"] .app-chrome {
+    --rail-width: 88px;
+  }
+
+  :root[data-theme="minimal"] .app-chrome .app-rail {
+    width: var(--rail-width);
+  }
+
+  :root[data-theme="minimal"] .app-chrome .chrome-frame {
+    margin-left: var(--rail-width);
+  }
+
+  .stage6-shell .is-welcome .dialogue {
+    overflow-y: auto;
+    padding: clamp(32px, 8vh, 100px) 32px 40px;
+    background: #f8fbff;
+  }
+
+  .stage6-shell .workspace.is-welcome {
+    grid-template-columns: 210px minmax(0, 1fr);
+  }
+
+  .stage6-shell .is-welcome > .evidence-desk {
+    display: none;
+  }
+
+  .stage6-shell .is-welcome :is(.hero-copy, .question-prompts, .composer) {
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: 860px;
+    margin-inline: auto;
+  }
+
+  .stage6-shell .is-welcome .hero-copy {
+    padding: 0 0 28px;
+    border: 0;
+    background: transparent;
+  }
+
+  .stage6-shell .is-welcome .hero-register > span {
+    display: none;
+  }
+
+  .stage6-shell .is-welcome .hero-copy h1 {
+    font-size: clamp(36px, 3.5vw, 52px);
+  }
+
+  .stage6-shell .is-welcome .hero-copy h1 > span {
+    font-family: var(--font-ui);
+    font-size: 16px;
+    letter-spacing: 0.08em;
+  }
+
+  .stage6-shell .is-welcome .hero-copy h1 em {
+    padding: 0;
+    background: none;
+    box-shadow: none;
+    font-size: 1em;
+  }
+
+  .stage6-shell .is-welcome .hero-method {
+    display: none;
+  }
+
+  .stage6-shell .is-welcome .question-prompts {
+    gap: 12px;
+    padding: 0 0 20px;
+    border: 0;
+    background: transparent;
+  }
+
+  .stage6-shell .is-welcome .question-prompts button {
+    min-height: 88px;
+    padding: 16px;
+    grid-template-columns: minmax(0, 1fr) 16px;
+    border: 1px solid #d4e0ed;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: none;
+  }
+
+  .stage6-shell .is-welcome .question-prompts button > span {
+    display: none;
+  }
+
+  /* Do not hide errors, restored history, or loading content in this slot. */
+  .stage6-shell .is-welcome .message-list:has(> div:only-child:empty) {
+    flex: 0 0 0;
+    min-height: 0;
+    padding: 0;
+  }
+
+  .stage6-shell .is-welcome .composer {
+    position: relative;
+    margin-top: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+
+  .stage6-shell .is-welcome .composer::before {
+    display: none;
+  }
+
+  .stage6-shell .is-welcome .composer-inner {
+    padding: 10px 12px;
+    gap: 10px;
+  }
+
+  .stage6-shell .is-welcome .composer > p {
+    text-align: center;
+  }
+
+  .stage6-shell .is-welcome .message-list {
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: 860px;
+    margin-inline: auto;
+  }
+}
+
+/* Shared chrome must not change shape or typography when navigating routes. */
+:root[data-theme="minimal"] .app-chrome .app-rail nav a :is(small, span) {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1.6;
+  letter-spacing: 0.02em;
+  color: #49617a;
+}
+
+:root[data-theme="minimal"] .app-chrome .app-rail-brand b {
+  font-size: 18px;
+  line-height: 1.3;
+  letter-spacing: normal;
+  white-space: nowrap;
+  writing-mode: horizontal-tb;
+}
+
+@media (min-width: 841px) and (max-width: 1100px) {
+  .stage6-shell .workspace.is-welcome {
+    grid-template-columns: 184px minmax(0, 1fr);
+  }
+
+  .stage6-shell .is-welcome .dialogue {
+    padding: 32px 24px;
+  }
+
+  .stage6-shell .is-welcome .question-prompts {
+    grid-template-columns: 1fr;
+  }
+
+  .stage6-shell .is-welcome .question-prompts button {
+    min-height: 56px;
+  }
+}
+
+@media (max-width: 840px) {
+  /* Preserve the existing fixed mobile composer and keyboard-safe insets. */
+  .stage6-shell .composer > p {
+    display: none;
+  }
+
+  .stage6-shell .is-welcome .hero-register > span {
+    display: none;
+  }
+}

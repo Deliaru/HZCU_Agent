@@ -647,3 +647,15 @@
   .congyu-mobile-hero{height:480px}
   .congyu-welcome-composer{margin-top:10px}
 }
+
+/* Single-line character-theme input remains centered while multiline input
+   can grow until the same bounded scroll fallback as the formal composer. */
+.congyu-welcome-composer textarea,
+.congyu-room-composer textarea {
+  min-height: 44px;
+  max-height: 112px;
+  field-sizing: content;
+  box-sizing: border-box;
+  padding-block: 10px;
+  overflow-y: auto;
+}

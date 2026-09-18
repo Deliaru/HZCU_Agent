@@ -1378,7 +1378,7 @@ export function CampusAgent() {
       )}
 
       <section
-        className={`workspace task-stage-${stage} ${working ? "is-working" : ""}`}
+        className={`workspace task-stage-${stage} ${working ? "is-working" : ""} ${messages.length === 0 && !loadingConversation && !working ? "is-welcome" : ""}`}
       >
         <ConversationRail
           conversations={conversations}
@@ -1880,7 +1880,7 @@ export function CampusAgent() {
                   }
                 }}
                 placeholder="想了解什么？直接问就好……"
-                rows={2}
+                rows={1}
                 disabled={working}
                 aria-label="输入校园问题"
               />

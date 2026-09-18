@@ -2164,3 +2164,14 @@ body {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* Keep the formal Agent composer vertically centered for one-line input on
+   desktop and mobile; the existing max height still permits multiline text. */
+.stage6-shell .composer textarea {
+  min-height: 44px;
+  max-height: 112px;
+  field-sizing: content;
+  box-sizing: border-box;
+  padding-block: 10px;
+  overflow-y: auto;
+}

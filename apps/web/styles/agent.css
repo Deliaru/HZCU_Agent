@@ -1161,6 +1161,10 @@
   width: 100%;
   max-height: 112px;
   min-height: 44px;
+  field-sizing: content;
+  box-sizing: border-box;
+  padding-block: 10px;
+  overflow-y: auto;
   resize: none;
   border: 0;
   background: transparent;
