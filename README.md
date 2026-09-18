@@ -1,208 +1,368 @@
 # HZCU Campus Agent
 
-面向浙大城市学院学生的模型原生校园认知 Agent。
+面向浙大城市学院学生的 **Model-native Campus Agent**。  
+项目不是传统 FAQ / 关键词问答，也不是“知识库 + 大模型”的简单套壳，而是让模型保留用户原始问题与上下文，自主规划调查步骤，通过受控工具读取校园资料，在证据充分后生成可追溯回答。
 
-本项目不是传统 FAQ、智能客服或“校园知识库套壳”。产品目标是让 Agent 能够结合学生画像、对话上下文和校园当前状态，理解模糊表达与隐含需求，自主调查官方来源，形成有依据、可执行、因人而异的回答。
+**Next.js 16 · React 19 · TypeScript · FastAPI · Python 3.12 · SQLite FTS5 · SSE · OpenAI Responses / Anthropic Messages · Docker**
 
-## 当前状态
+> **实际使用**：项目已被学院采用并用于新生服务，近期日均约 **200 次调用**。  
+> **开发方式**：个人独立完成产品设计、Agent 架构、前后端、校园数据管线、部署与测试。
 
-- 产品与架构基线已完成
-- 阶段 1 可运行纵向骨架已接通
-- 阶段 2“校园感知与时间版本”工程实现与当前环境验收已完成
-- 阶段 0 至阶段 5 已完成
-- 阶段 6 已完成：真实模型、本地镜像、真实 Edge 全流程和重启恢复已验证
-- 实际目标机器部署已按用户决定延期，不影响当前本地试用与演示
-- 初始入口：独立 Web 应用
-- 初始用户：新生及往届学生
-- 当前数据范围：公开官方信息 + 已批准的 Campus 本地镜像 + 可选 CA/VPN 实时只读查询
-- 明确排除：个人课表、成绩、学分和任何申请代办或业务写操作
+---
 
-当前代码已经包含：
+## Demo
 
-- 模型原生语义感知、动态规划和回答组合接口；
-- OpenAI Responses API 模型适配器与透明的无密钥演示适配器；
-- 受控 HZCU 官网实时检索、官方域名白名单、正文读取和证据记录；
-- 49 个聚合来源、142 个登记入口、条件请求、内容哈希、不可变版本和
-  gzip 原文快照；
-- HTML、GB2312 旧站、PDF 与字段白名单 JSON API 解析；
-- SQLite FTS5 trigram 当前版本检索（单查询 BM25、标题加权、服务端权限过滤）；
-- 48 条多领域真实镜像回归曾全部命中预期材料；
-- 保留可重建的语义分块、向量和结构化校园实体供管理与后续评测；
-- 实时证据安全回写、全历史索引、版本查询与结构化差异；
-- 可独立部署的周期同步 Worker 和只读来源状态 API；
-- 来源健康、新鲜度告警和桌面/移动端版本工作台；
-- 会话、任务、回答与证据持久化；
-- SSE 实时任务进度；
-- 桌面端与移动端独立 Web 界面、公开来源观测与版本透明入口；
-- 可选真实 CAS 登录和校内网络直连通知查询；
-- 后端单元/端到端测试和前端生产构建验证。
-- 180 天匿名设备主体、可选 CA 显式合并和严格主体隔离；
-- 历史会话、画像确认、手动待办、回答反馈、取消/重试/实时复核；
-- CA 管理员只读运营台和 SQLite 单机试用部署包；
-- 回答非法控制字符清理与服务重启任务恢复。
+### 产品界面
 
-演示模式会真实运行检索、证据链、任务和界面，但不会伪装成大模型完成语义推理。配置模型 API 后才启用多假设理解、动态调查规划与个性化回答。
+项目提供简洁模式与角色化「琮羽」模式，两套界面共享同一套会话、Agent、证据链和用户数据逻辑。
 
-新增功能与开发范围只由用户决定。评测记录、历史 Spec 和开发者判断不能自行生成
-新的产品需求或阶段门槛。
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="./apps/web/public/themes/hzcu-girl/theme-minimal-preview.webp" alt="HZCU Agent minimal theme preview" />
+      <br />
+      <sub>Minimal / 简洁模式</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="./apps/web/public/themes/hzcu-girl/theme-character-preview.webp" alt="HZCU Agent character theme preview" />
+      <br />
+      <sub>Congyu / 琮羽模式</sub>
+    </td>
+  </tr>
+</table>
 
-## 核心原则
+### 一次完整 Demo 会发生什么
 
-1. 模型负责理解与推理，工具负责接触现实。
-2. 知识库是长期记忆和缓存，不是 Agent 的大脑。
-3. 主模型始终保留用户原始表达、上下文与证据，不被单一意图标签替代。
-4. 校园事实必须能够追溯到官方来源和核验时间。
-5. 模糊问题优先形成合理假设并提供帮助，仅在结果会实质改变时追问。
-6. 权限、密钥、数据隔离和高风险操作由代码强制控制，不交给模型决定。
+例如用户直接问：
 
-## 文档入口
+> **“国创大概什么时候会中期检查，校创需要吗？”**
 
-从 [文档索引](docs/00-index.md) 开始阅读。
+HZCU Agent 不把问题先压成一个固定意图标签，而是执行完整调查链路：
 
-当前开发先读：
+1. 保留原始问题、近期对话、当前时间和用户已确认画像；
+2. 形成可修正的理解假设，并动态生成调查计划；
+3. 从校园镜像中搜索候选材料，必要时继续查看文档结构、文内查找并读取完整段落；
+4. 在权限与网络允许时，对登记过的官方来源进行实时只读核验；
+5. 将取得的材料转换为带来源、时间和适用范围的 Evidence；
+6. 对关键校园事实做 grounding / citation verification；
+7. 通过 SSE 将“理解 → 规划 → 调查 → 成稿”的真实进度持续推送到前端；
+8. 最终返回带引用的回答，并保留任务、回答、证据与会话记录。
 
-1. [当前 PRD](docs/01-prd.md)
-2. [开发计划](docs/11-delivery-plan.md)
-3. [当前实现状态](docs/13-implementation-status.md)
-4. [阶段 6：功能完成与本地可运行交付](docs/20-stage-6-productization.md)
-5. [本地试用与运行手册](docs/21-pilot-demo-runbook.md)
+前端内置的典型 Demo 问题包括：
 
-实现细节按需查阅[当前系统结构](docs/02-system-spec.md)、
-[Agent 行为](docs/03-agent-spec.md)、[采集规格](docs/05-data-ingestion-spec.md)、
-[工具与应用 API](docs/06-tool-api-spec.md)和
-[Source Registry 运行手册](docs/14-source-registry-operations.md)。历史评测、验收与
-早期构想只作背景参考，不能自行生成开发任务。
+- “这个学年暑假后什么时候开学？”
+- “国创大概什么时候会中期检查，校创需要吗？”
+- “选课时怎样兼顾绩点、兴趣和后续发展？”
 
-架构决策记录位于 [`docs/adr`](docs/adr/README.md)，术语定义见 [术语表](docs/glossary.md)。
+默认 Demo 模式无需模型 API Key，也会真实运行会话、检索、证据链、任务状态与界面流程；配置真实模型后，才启用多假设理解、动态规划、调查与回答组合。
 
-## 本地运行
+---
 
-前置环境：
+## Architecture
+
+### 系统架构
+
+\`\`\`mermaid
+flowchart TB
+    USER["Student / Browser"] --> WEB["Next.js 16 + React 19<br/>Web / Mobile UI"]
+    WEB -->|"REST + SSE"| API["FastAPI API"]
+
+    API --> ACCESS["Identity / Admission<br/>Anonymous · CAS · Turnstile · Rate Limit"]
+    ACCESS --> QUEUE["Persistent Task Scheduler<br/>SQLite FIFO · Concurrency · Recovery"]
+    QUEUE --> COORD["Agent Coordinator"]
+
+    COORD <-->|"structured model calls"| MODEL["Model Gateway<br/>OpenAI Responses / Anthropic Messages"]
+    COORD --> TOOLS["Tool Gateway"]
+
+    TOOLS --> MEMORY["Campus Memory Search<br/>SQLite FTS5 trigram"]
+    TOOLS --> READER["Document Tools<br/>inspect · find · read"]
+    TOOLS --> LIVE["Optional Live Read<br/>allowlisted official sources"]
+
+    MEMORY --> DB[("SQLite<br/>tasks · conversations · answers<br/>versions · FTS · product data")]
+    READER --> SNAP["Immutable snapshots<br/>HTML · PDF · JSON · imported files"]
+    LIVE --> OFFICIAL["HZCU Official Sources"]
+
+    COORD --> GROUND["Evidence Workspace<br/>Grounding · Claim Verification · Citation Repair"]
+    GROUND --> DB
+    DB --> WEB
+
+    REG["Source Registry<br/>51 registered sources"] --> WORKER["Ingestion Worker"]
+    WORKER --> OFFICIAL
+    WORKER --> PARSE["Parse / Normalize / Hash / Version"]
+    PARSE --> DB
+    PARSE --> SNAP
+\`\`\`
+
+### Agent 执行链路
+
+\`\`\`mermaid
+flowchart LR
+    Q["原始问题 + 对话 + 时间 + 已确认画像"]
+    Q --> PREP["Semantic understanding<br/>多假设理解"]
+    PREP --> PLAN["Dynamic investigation plan"]
+    PLAN --> CALL["Tool calls"]
+    CALL --> EVIDENCE["Evidence workspace"]
+    EVIDENCE --> CHECK{"证据是否足够？"}
+    CHECK -->|"No"| PLAN
+    CHECK -->|"Yes"| DRAFT["Grounded answer"]
+    DRAFT --> VERIFY["Claim / citation verification"]
+    VERIFY --> ANSWER["Answer + Sources + Next actions"]
+\`\`\`
+
+这里的核心设计是：**模型负责理解、规划和材料取舍；代码负责工具、权限、预算、证据与安全边界。**  
+正常路径不会把校园问题硬编码成“问题分类 → 固定来源 → 模板答案”。
+
+---
+
+## Engineering Highlights
+
+| 方向 | 实现 |
+| --- | --- |
+| **Agent Runtime** | Coordinator + Model Gateway；保留原问题与上下文，支持多假设理解、动态调查计划、工具调用、证据复核和回答修订 |
+| **Grounding** | 任务内 Evidence ID、claim-level citation、独立 verification、引用修复；无足够材料时明确暴露证据缺口 |
+| **校园检索** | SQLite FTS5 trigram + BM25 / 标题权重 / 服务端权限过滤；搜索负责发现候选，模型继续 inspect / find / read 原文 |
+| **持续数据更新** | Source Registry 当前登记 **51 个官方/校园来源**；Worker 支持条件请求、内容哈希、不可变版本和原始快照 |
+| **多格式解析** | HTML、GB2312 旧站、PDF、JSON API、导入材料；保留文档版本、原文定位、时间与适用范围 |
+| **任务基础设施** | SQLite 持久化 FIFO 调度、单主体/全局并发限制、任务取消、排队超时、服务重启恢复 |
+| **实时体验** | SSE 推送理解、规划、工具读取、证据获取和回答阶段；断线后可通过持久化任务恢复 |
+| **身份与安全** | 匿名设备主体、可选 CAS、Turnstile、CSRF、来源 allowlist、凭据隔离、只读校园工具 |
+| **知识闭环** | 证据不足时可进入社区问题；贡献者回答经审核后可沉淀为 curated knowledge，并保持官方来源优先 |
+| **工程验证** | Pytest、Playwright、TypeScript typecheck、Next.js production build、Alembic migration |
+
+---
+
+## Why not a normal RAG chatbot?
+
+普通校园问答很容易变成：
+
+\`\`\`text
+用户问题
+  → 意图分类
+  → 向量库 Top-K
+  → 拼 Prompt
+  → 生成答案
+\`\`\`
+
+这对“今年 / 我这个年级 / 这个学院 / 现在是否仍有效 / 两份通知冲突”之类问题并不可靠。
+
+HZCU Agent 更接近一个受约束的调查型 Agent：
+
+\`\`\`text
+理解真实问题
+  → 建立可修正假设
+  → 规划调查路径
+  → 搜索候选材料
+  → 阅读原文
+  → 判断时效与适用范围
+  → 必要时继续调查
+  → 对事实声明逐项绑定证据
+  → 输出可追溯答案
+\`\`\`
+
+校园知识库在这里是 **长期记忆与现实缓存**，而不是 Agent 的“大脑”。
+
+---
+
+## Data & Evidence Pipeline
+
+\`\`\`mermaid
+flowchart LR
+    REG["Source Registry"] --> DISCOVER["发现资源"]
+    DISCOVER --> FETCH["条件请求 / API / 导入"]
+    FETCH --> SNAPSHOT["保存原始快照"]
+    SNAPSHOT --> HASH{"内容是否变化？"}
+    HASH -->|"No"| SEEN["更新 last_seen"]
+    HASH -->|"Yes"| PARSE["解析 / 清洗 / OCR"]
+    PARSE --> VERSION["不可变 Document Version"]
+    VERSION --> INDEX["FTS / chunks / entities"]
+    INDEX --> SEARCH["Agent Search / Read Tools"]
+\`\`\`
+
+当前数据链路重点保证：
+
+- 来源必须先进入白名单 Source Registry；
+- 原始 HTML / PDF / JSON / 导入文件保留快照；
+- 同一 URL 内容变化会生成新版本，而不是覆盖历史；
+- 检索结果携带来源、观察时间、版本与可见范围；
+- 历史材料不会自动冒充当前规则；
+- 实时访问失败时，本地已验证镜像仍可作为明确标注的缓存证据。
+
+---
+
+## Product Features
+
+### 学生端
+
+- 多轮校园问答；
+- Agent 实时调查进度；
+- 回答证据与官方来源展开；
+- 历史会话恢复；
+- 已确认画像与个性化上下文；
+- 手动待办；
+- 回答反馈；
+- 简洁 / 琮羽双主题；
+- 移动端适配；
+- 问题广场与知识详情页。
+
+### 管理端
+
+- 来源状态、版本与新鲜度观察；
+- Agent 任务健康与运行指标；
+- 模型 / API 配置；
+- 匿名试用与队列策略；
+- 社区问题审核；
+- 贡献者管理；
+- Curated Knowledge 草稿、发布、移动与退役；
+- 审计记录与官方来源优先规则。
+
+---
+
+## Tech Stack
+
+| Layer | Stack |
+| --- | --- |
+| Web | Next.js 16, React 19, TypeScript, React Markdown, Lucide |
+| API | Python 3.12, FastAPI, Pydantic, SQLAlchemy Async, Alembic |
+| Agent | Coordinator, Model Gateway, Tool Gateway, Grounding / Verification |
+| Model Providers | OpenAI Responses API, Anthropic Messages API, no-key Demo adapter |
+| Retrieval | SQLite FTS5 trigram, BM25, structured document reading |
+| Data | SQLite, immutable document versions, filesystem snapshots |
+| Realtime | Server-Sent Events (SSE) |
+| Auth / Safety | Anonymous device identity, optional CAS, Turnstile, CSRF, allowlist |
+| Deployment | Docker Compose, Caddy, standalone Windows / Linux |
+| Test | Pytest, Playwright, TypeScript, Next.js production build |
+
+---
+
+## Repository Structure
+
+\`\`\`text
+HZCU_Agent/
+├─ apps/
+│  ├─ api/
+│  │  ├─ src/hzcu_agent/
+│  │  │  ├─ api/            # FastAPI routes
+│  │  │  ├─ services/       # Coordinator / scheduler / model / grounding
+│  │  │  ├─ tools/          # Campus search / document / live tools
+│  │  │  ├─ ingestion/      # Crawl / parse / snapshot / index
+│  │  │  └─ resources/      # Source Registry
+│  │  ├─ alembic/           # Database migrations
+│  │  └─ tests/
+│  └─ web/
+│     ├─ app/                # Next.js App Router
+│     ├─ components/         # Agent / evidence / admin / community UI
+│     ├─ public/             # Theme assets
+│     └─ e2e/                # Playwright tests
+├─ docs/                     # PRD / system / agent / ingestion / ADR
+├─ deploy/                   # Caddy
+├─ scripts/                  # Windows / Linux helpers
+├─ docker-compose.yml
+└─ Makefile
+\`\`\`
+
+---
+
+## Quick Start
+
+### Windows
+
+不需要 WSL。PowerShell 脚本会创建独立虚拟环境、安装依赖、执行迁移并启动 API + Web：
+
+\`\`\`powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\start-windows.ps1
+\`\`\`
+
+默认启动 **no-key Demo mode**。终端会输出本机和局域网访问地址，手机与电脑在同一局域网即可直接访问。
+
+### Linux / macOS / WSL
+
+要求：
 
 - Python 3.12+
-- [`uv`](https://docs.astral.sh/uv/)
-- Node.js 24+ 与 npm
+- uv
+- Node.js 24+
+- npm
 
-安装并启动后端：
+启动 API：
 
-```bash
+\`\`\`bash
 make api-install
 make api-migrate
 make api-dev
-```
+\`\`\`
 
-首次同步和检查来源：
+启动 Web：
 
-```bash
+\`\`\`bash
+make web-install
+make web-dev
+\`\`\`
+
+默认访问：
+
+- Web: http://localhost:3000
+- API health: http://localhost:8000/api/v1/health
+
+首次同步可使用：
+
+\`\`\`bash
 .venv/bin/hzcu-agent list-sources
 .venv/bin/hzcu-agent sync-sources --limit 3
 .venv/bin/hzcu-agent search-memory "创新训练项目" --top-k 8
-.venv/bin/hzcu-agent reindex-memory
-```
+\`\`\`
 
-生产拓扑使用独立 Worker 按 Source Registry 的间隔自动同步；本地也可以运行：
+真实模型、本地管理员、CAS 与正式部署配置见 [本地试用与运行手册](docs/21-pilot-demo-runbook.md)。
 
-```bash
-.venv/bin/hzcu-agent sync-worker --poll-seconds 30
-```
+---
 
-另开终端安装并启动前端：
+## Verification
 
-```bash
-make web-install
-make web-dev
-```
-
-然后访问 `http://localhost:3000`。API 健康检查位于
-`http://localhost:8000/api/v1/health`。
-
-### Windows 原生启动（不需要 WSL）
-
-本机没有 WSL 时，使用 PowerShell 启动脚本即可。脚本会创建独立的
-`.venv-windows`、安装 API/Web 依赖、执行数据库迁移，并在同一个窗口以 Windows
-稳定的 Webpack 开发模式启动 API 和 Web；按 `Ctrl+C` 会同时停止两个服务：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\start-windows.ps1
-```
-
-默认使用无需密钥的 Demo 模式，并让 Web/API 监听 `0.0.0.0`。启动完成后终端会同时
-打印本机地址和检测到的局域网地址；手机与电脑连接同一局域网后，直接打开类似
-`http://192.168.1.23:13000/` 的地址即可试用。脚本会自动把活动网卡 IPv4 加入
-Next.js 开发来源白名单和 API CORS，不需要把 `0.0.0.0` 当作访问地址。
-
-可先复制
-`config\windows.env.example` 为 `config\windows.env` 做本机配置；如果要使用仓库
-根目录现有的 `API.txt`，执行：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\start-windows.ps1 -ModelMode Real -ModelConfig .\API.txt
-```
-
-需要在页面配置 API 时，使用本地管理员模式：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\start-windows.ps1 -LocalAdmin
-```
-
-然后打开终端打印的本机或局域网地址并进入 `/admin`，首次设置本地管理员账号和密码，进入
-“模型与 API”填写协议、端点、API Key、主模型和辅助模型。API Key 只会在服务端加密
-保存，不会回显到页面。
-
-脚本不读取或打印模型密钥；`API.txt` 和 `config\windows.env` 均不会提交到仓库。
-
-默认 `api-dev` 使用无需密钥的演示模式。使用项目现有的真实模型配置：
-
-```bash
-make api-migrate
-make api-real API_PORT=18000 MODEL_CONFIG=API.txt
-```
-
-`api-real` 只把 UTF-8/UTF-8 BOM 配置读入当前进程内存，不复制 `.env`，也不输出
-API Key。另开终端启动与该 API 端口匹配的 Web：
-
-```bash
-make web-dev API_PORT=18000 WEB_PORT=13000
-```
-
-然后访问 `http://127.0.0.1:13000/`。不要把 `API.txt`、`.env`、Cookie、统一身份
-认证密码或 Token 提交到仓库。
-
-公开版本不包含校外 VPN sidecar、真实登录抓取脚本或信源发现产物。正式校内部署
-应使用 `HZCU_CAMPUS_QUERY_ROUTE=direct`，并按目标网络环境实现、审核实时采集器。
-
-## 验证
-
-```bash
+\`\`\`bash
 make api-test
 make web-build
-```
+\`\`\`
 
-当前实现进度、已验证能力和已知边界见
-[实现状态](docs/13-implementation-status.md)。
-来源配置、同步运行和故障处理见
-[Source Registry 运行手册](docs/14-source-registry-operations.md)。
+前端还提供：
 
-## 阶段 6 本地试用
+\`\`\`bash
+cd apps/web
+npm run typecheck
+npm run e2e
+\`\`\`
 
-阶段 6 已在当前开发机完成真实模型和系统 Microsoft Edge 验证。首次安装后启动：
+---
 
-```bash
-make api-install
-make api-migrate
-make api-real API_PORT=18000 MODEL_CONFIG=API.txt
-```
+## Scope & Security
 
-另开终端运行：
+当前公开版本聚焦 **校园公开/已批准镜像信息的只读调查**。
 
-```bash
-make web-install
-make web-dev API_PORT=18000 WEB_PORT=13000
-```
+明确不做：
 
-访问 `http://127.0.0.1:13000/`，API 为 `http://127.0.0.1:18000`。未登录用户也可
-读取已经批准用于试用的 Public 与 Campus 本地镜像；登录只增加实时 Campus 查询、
-跨设备校园身份和管理员能力。
+- 查询个人成绩、学分等敏感教务数据；
+- 代替学生执行选课、申请、提交等业务写操作；
+- 让模型直接访问任意 URL、数据库、文件或账号凭据；
+- 在 Source Registry、仓库或快照中保存 CAS / VPN 密码、Cookie、Token、API Key。
 
-实际目标机器部署已由用户延期；Docker、CA、VPN 和正式域名配置留待用户重新提出。
-完整启动、身份使用和故障处理见[本地试用与运行手册](docs/21-pilot-demo-runbook.md)。
+公开仓库不包含校外 VPN sidecar、真实登录抓取脚本或私有凭据。
+
+---
+
+## Documentation
+
+想快速理解代码，建议按这个顺序：
+
+1. [当前系统结构](docs/02-system-spec.md)
+2. [Agent 行为与工具使用](docs/03-agent-spec.md)
+3. [数据采集与版本链路](docs/05-data-ingestion-spec.md)
+4. [工具与应用 API](docs/06-tool-api-spec.md)
+5. [当前实现状态](docs/13-implementation-status.md)
+6. [本地试用与运行手册](docs/21-pilot-demo-runbook.md)
+7. [Architecture Decision Records](docs/adr/README.md)
+
+完整文档索引见 [docs/00-index.md](docs/00-index.md)。
+
+---
+
+## License
+
+See [LICENSE](LICENSE).
