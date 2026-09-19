@@ -1,6 +1,22 @@
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api/v1";
 
+export type Announcement = {
+  id: string;
+  title: string;
+  content: string;
+  active: boolean;
+  created_at: string;
+};
+
+export const getUnreadAnnouncements = () => apiFetch<Announcement[]>("/announcements/unread", { cache: "no-store" });
+export const getAdminAnnouncements = () => apiFetch<Announcement[]>("/admin/announcements", { cache: "no-store" });
+export const publishAnnouncement = (title: string, content: string) => apiFetch<Announcement>("/admin/announcements", {
+  method: "POST", body: JSON.stringify({ title, content }),
+});
+export const readAnnouncement = (id: string) => apiFetch<void>(`/announcements/${encodeURIComponent(id)}/read`, { method: "POST" });
+export const withdrawAnnouncement = (id: string) => apiFetch<void>(`/admin/announcements/${encodeURIComponent(id)}/withdraw`, { method: "POST" });
+
 export type Evidence = {
   evidence_id: string;
   title: string;

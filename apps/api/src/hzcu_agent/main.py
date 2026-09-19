@@ -9,6 +9,7 @@ from sqlalchemy import update
 from hzcu_agent.api.routes import (
     admin,
     agent,
+    announcements,
     auth,
     community,
     conversations,
@@ -198,6 +199,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(admin.router, prefix=resolved_settings.api_prefix)
     app.include_router(conversations.router, prefix=resolved_settings.api_prefix)
     app.include_router(product.router, prefix=resolved_settings.api_prefix)
+    app.include_router(announcements.router, prefix=resolved_settings.api_prefix)
     app.include_router(sources.router, prefix=resolved_settings.api_prefix)
     return app
 

@@ -283,6 +283,28 @@ class Conversation(Base):
     )
 
 
+class Announcement(Base):
+    __tablename__ = "announcements"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    title: Mapped[str] = mapped_column(String(160))
+    content: Mapped[str] = mapped_column(Text)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class AnnouncementRead(Base):
+    __tablename__ = "announcement_reads"
+
+    announcement_id: Mapped[str] = mapped_column(
+        ForeignKey("announcements.id", ondelete="CASCADE"), primary_key=True
+    )
+    subject_id: Mapped[str] = mapped_column(
+        ForeignKey("product_subjects.id", ondelete="CASCADE"), primary_key=True
+    )
+    read_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
 class Message(Base):
     __tablename__ = "messages"
     __table_args__ = (

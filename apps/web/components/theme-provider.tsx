@@ -22,6 +22,7 @@ import {
 } from "@/lib/privacy-consent";
 
 import { PrivacyNotice } from "./privacy-notice";
+import { AnnouncementGate } from "./announcement-gate";
 import { ThemePicker } from "./theme-picker";
 
 type ThemeContextValue = {
@@ -108,6 +109,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   return (
     <ThemeContext.Provider value={value}>
+      {accepted && !noticeOpen ? <AnnouncementGate /> : null}
       {appReady ? <div className="theme-app-content">{children}</div> : null}
       {consentState === "required" || noticeOpen ? (
         <PrivacyNotice

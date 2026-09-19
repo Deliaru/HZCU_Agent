@@ -49,9 +49,10 @@ import type {
 
 import { AppChrome } from "./app-chrome";
 import { KnowledgeGovernancePanel } from "./knowledge-governance";
+import { AnnouncementAdmin } from "./announcement-admin";
 
 type TaskHealth = Awaited<ReturnType<typeof getAdminTaskHealth>>["items"];
-type AdminView = "model" | "agent" | "telemetry" | "knowledge";
+type AdminView = "model" | "agent" | "telemetry" | "knowledge" | "announcements";
 type AccessState = "loading" | "redirecting" | "admin" | "denied" | "failed";
 type ConfigDraft = {
   protocol: "openai_responses" | "anthropic_messages";
@@ -363,7 +364,11 @@ export function AdminConsole() {
           >
             <span>04</span><MessageSquareWarning size={17} /> 知识治理
           </button>
+          <button type="button" className={view === "announcements" ? "active" : ""} onClick={() => setView("announcements")}>
+            <span>05</span><MessageSquareWarning size={17} /> 公告管理
+          </button>
         </nav>
+        {view === "announcements" ? <AnnouncementAdmin /> : null}
 
         {view === "model" && draft && configuration ? (
           <section className="model-config-workspace">
