@@ -5,7 +5,7 @@
 
 **Next.js 16 · React 19 · TypeScript · FastAPI · Python 3.12 · SQLite FTS5 · SSE · OpenAI Responses / Anthropic Messages · Docker**
 
-> **实际使用**：项目已被学院采用并用于新生服务，近期日均约 **200 次调用**。  
+> **实际使用**：项目已被用于新生服务，近期日均约 **200 次调用**。  
 > **开发方式**：个人独立完成产品设计、Agent 架构、前后端、校园数据管线、部署与测试。
 
 ---
