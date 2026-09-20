@@ -131,6 +131,13 @@ class AgentRuntimePolicy(Base):
     __tablename__ = "agent_runtime_policies"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default="primary")
+    network_restriction_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    network_allowed_cidrs: Mapped[list[str]] = mapped_column(JSON, default=list)
+    network_admin_bypass: Mapped[bool] = mapped_column(Boolean, default=True)
+    network_contributor_bypass: Mapped[bool] = mapped_column(Boolean, default=True)
+    network_denied_message: Mapped[str] = mapped_column(
+        String(300), default="当前网络暂未开放 Agent 提问，请切换至已开放的网络后重试。"
+    )
     mode: Mapped[str] = mapped_column(String(16), default="observe")
     subject_window_limit: Mapped[int] = mapped_column(Integer, default=5)
     subject_window_seconds: Mapped[int] = mapped_column(Integer, default=1800)

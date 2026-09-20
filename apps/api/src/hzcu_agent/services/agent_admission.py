@@ -27,6 +27,7 @@ from hzcu_agent.services.agent_policy import (
     GLOBAL_SCOPE_KEY,
     AgentPolicyService,
 )
+from hzcu_agent.services.client_network import client_ip, network_access
 
 TERMINAL_TASK_STATES = frozenset({"completed", "failed", "canceled"})
 
@@ -95,6 +96,14 @@ class AgentAdmissionService:
         request_kind: str,
         hold_lease: bool = False,
     ) -> AdmissionResult:
+        if not network_access(request, principal, self._policy.snapshot())["allowed"]:
+            async with self._policy.counter_lock:
+                await self._record_rejection(session, "AGENT_NETWORK_DENIED", utc_now())
+            raise AgentAdmissionError(
+                "AGENT_NETWORK_DENIED",
+                self._policy.snapshot().network_denied_message,
+                status_code=403,
+            )
         subject_key = principal.product_subject_id
         if not subject_key:
             raise AgentAdmissionError(
@@ -671,10 +680,7 @@ class AgentAdmissionService:
             await session.rollback()
 
     def _ip_hmac(self, request: Request) -> str:
-        forwarded = request.headers.get("x-forwarded-for", "")
-        ip = forwarded.split(",", 1)[0].strip() if forwarded else ""
-        if not ip and request.client is not None:
-            ip = request.client.host
+        ip = client_ip(request) or "unknown"
         key = self._policy.security_hmac_key()
         return hmac.new(key, ip.encode("utf-8"), hashlib.sha256).hexdigest()
 

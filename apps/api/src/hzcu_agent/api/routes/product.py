@@ -51,23 +51,7 @@ from hzcu_agent.schemas import (
 )
 from hzcu_agent.text_safety import clean_product_text
 
-ContributorPrincipalDependency = Annotated[RequestPrincipal, Depends(request_principal)]
-
-
-def _deny_contributor(principal: ContributorPrincipalDependency) -> None:
-    """Keep local answerer accounts scoped to public board read/answer APIs."""
-
-    if principal.authenticated and principal.role == "contributor":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": "CONTRIBUTOR_PRODUCT_ACCESS_DENIED",
-                "message": "贡献者账号仅可浏览问题广场并提交授权回答。",
-            },
-        )
-
-
-router = APIRouter(tags=["product"], dependencies=[Depends(_deny_contributor)])
+router = APIRouter(tags=["product"])
 SessionDependency = Annotated[AsyncSession, Depends(request_session)]
 PrincipalDependency = Annotated[RequestPrincipal, Depends(request_principal)]
 

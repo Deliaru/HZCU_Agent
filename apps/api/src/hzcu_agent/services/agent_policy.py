@@ -4,6 +4,7 @@ import asyncio
 import base64
 import contextvars
 import hashlib
+import ipaddress
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -18,6 +19,11 @@ from hzcu_agent.db import Database
 from hzcu_agent.models import AgentRuntimePolicy, AgentTask, AgentUsageCounter, new_id, utc_now
 
 DEFAULT_POLICY: dict[str, Any] = {
+    "network_restriction_enabled": False,
+    "network_allowed_cidrs": [],
+    "network_admin_bypass": True,
+    "network_contributor_bypass": True,
+    "network_denied_message": "当前网络暂未开放 Agent 提问，请切换至已开放的网络后重试。",
     "mode": "observe",
     "subject_window_limit": 5,
     "subject_window_seconds": 1800,
@@ -62,6 +68,11 @@ class AgentModelBudgetExceeded(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class AgentPolicySnapshot:
+    network_restriction_enabled: bool = False
+    network_allowed_cidrs: tuple[str, ...] = ()
+    network_admin_bypass: bool = True
+    network_contributor_bypass: bool = True
+    network_denied_message: str = "当前网络暂未开放 Agent 提问，请切换至已开放的网络后重试。"
     mode: str = "observe"
     subject_window_limit: int = 5
     subject_window_seconds: int = 1800
@@ -409,6 +420,11 @@ class AgentPolicyService:
                 raise AgentPolicyConfigError("Turnstile secret 无法解密。") from exc
         return (
             AgentPolicySnapshot(
+                network_restriction_enabled=row.network_restriction_enabled,
+                network_allowed_cidrs=tuple(row.network_allowed_cidrs),
+                network_admin_bypass=row.network_admin_bypass,
+                network_contributor_bypass=row.network_contributor_bypass,
+                network_denied_message=row.network_denied_message,
                 mode=row.mode,
                 subject_window_limit=row.subject_window_limit,
                 subject_window_seconds=row.subject_window_seconds,
@@ -442,6 +458,34 @@ class AgentPolicyService:
         if unknown:
             raise AgentPolicyConfigError(f"未知 Agent 策略字段: {', '.join(sorted(unknown))}")
         result = dict(values)
+        for key in (
+            "network_restriction_enabled",
+            "network_admin_bypass",
+            "network_contributor_bypass",
+        ):
+            if key in result and not isinstance(result[key], bool):
+                raise AgentPolicyConfigError(f"{key} 必须是布尔值。")
+        if "network_allowed_cidrs" in result:
+            entries = result["network_allowed_cidrs"]
+            if not isinstance(entries, list) or len(entries) > 256:
+                raise AgentPolicyConfigError("最多允许 256 条 IP / CIDR。")
+            try:
+                if any(not isinstance(entry, str) for entry in entries):
+                    raise ValueError()
+                result["network_allowed_cidrs"] = list(
+                    dict.fromkeys(
+                        str(ipaddress.ip_network(entry.strip(), strict=True)) for entry in entries
+                    )
+                )
+            except ValueError as exc:
+                raise AgentPolicyConfigError(
+                    "IP / CIDR 格式错误，网段必须使用正确的网络地址。"
+                ) from exc
+        if "network_denied_message" in result:
+            message = result["network_denied_message"]
+            if not isinstance(message, str) or not 1 <= len(message.strip()) <= 300:
+                raise AgentPolicyConfigError("网络拒绝提示必须为 1 到 300 字。")
+            result["network_denied_message"] = message.strip()
         if "mode" in result and result["mode"] not in POLICY_MODES:
             raise AgentPolicyConfigError("Agent 模式必须是 observe、enforce 或 paused。")
         if "scope_policy" in result and result["scope_policy"] not in SCOPE_POLICIES:

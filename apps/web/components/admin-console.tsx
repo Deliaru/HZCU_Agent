@@ -97,6 +97,11 @@ function draftFrom(config: AdminModelConfiguration): ConfigDraft {
 
 function agentPolicyDraftFrom(policy: AdminAgentPolicy): AgentPolicyDraft {
   return {
+    network_restriction_enabled: policy.network_restriction_enabled,
+    network_allowed_cidrs: policy.network_allowed_cidrs,
+    network_admin_bypass: policy.network_admin_bypass,
+    network_contributor_bypass: policy.network_contributor_bypass,
+    network_denied_message: policy.network_denied_message,
     mode: policy.mode,
     subject_window_limit: policy.subject_window_limit,
     subject_window_seconds: policy.subject_window_seconds,
@@ -223,6 +228,7 @@ export function AdminConsole() {
     try {
       const saved = await updateAdminAgentPolicy({
         ...agentPolicyDraft,
+        network_allowed_cidrs: agentPolicyDraft.network_allowed_cidrs.map((value) => value.trim()).filter(Boolean),
         ...(turnstileSecret.trim() ? { turnstile_secret: turnstileSecret.trim() } : {}),
       });
       setAgentPolicy(saved);
@@ -804,6 +810,24 @@ function AgentPolicyPanel({
             <input id="policy-timezone" value={draft.timezone} onChange={(event) => onDraftChange({ ...draft, timezone: event.target.value })} />
           </div>
         </div>
+
+        <fieldset className="agent-policy-turnstile">
+          <legend>Agent 任务网络限制</legend>
+          <p>仅限制发起提问、重试和重新核验。所有用户仍可浏览网站。</p>
+          <p>当前来源 IP：{policy.current_client_ip ?? "无法识别"} · {policy.current_network_allowed ? "允许发起任务" : "不允许发起任务"}（{({ disabled: "限制未开启", admin_bypass: "管理员豁免", contributor_bypass: "贡献者豁免", allowlist: "命中白名单", denied: "未命中允许规则" } as Record<string, string>)[policy.current_network_reason] ?? "未知"}）</p>
+          <label className="agent-policy-check">
+            <input type="checkbox" checked={draft.network_restriction_enabled} onChange={(event) => onDraftChange({ ...draft, network_restriction_enabled: event.target.checked })} />
+            <span>启用 IP 限制<small>独立生效，不受上方配额观察模式影响。</small></span>
+          </label>
+          <label className="field-label" htmlFor="agent-allowed-networks">允许的 IP / CIDR（每行一条，删除对应行即可移除）</label>
+          <textarea id="agent-allowed-networks" rows={6} value={draft.network_allowed_cidrs.join("\n")} onChange={(event) => onDraftChange({ ...draft, network_allowed_cidrs: event.target.value.split("\n") })} placeholder={"202.107.195.201/32\n202.107.195.203/32\n183.26.172.31/32"} />
+          {draft.network_restriction_enabled && !draft.network_allowed_cidrs.some((value) => value.trim()) && <p role="alert">白名单为空：保存后，仅勾选豁免的账号角色能够发起任务。</p>}
+          <label className="agent-policy-check"><input type="checkbox" checked={draft.network_admin_bypass} onChange={(event) => onDraftChange({ ...draft, network_admin_bypass: event.target.checked })} /><span>管理员可从任意 IP 发起任务</span></label>
+          <label className="agent-policy-check"><input type="checkbox" checked={draft.network_contributor_bypass} onChange={(event) => onDraftChange({ ...draft, network_contributor_bypass: event.target.checked })} /><span>贡献者可从任意 IP 发起任务</span></label>
+          <label className="field-label" htmlFor="agent-network-message">拒绝提示文案</label>
+          <input id="agent-network-message" required maxLength={300} value={draft.network_denied_message} onChange={(event) => onDraftChange({ ...draft, network_denied_message: event.target.value })} />
+          <p>与本页策略一起保存，立即生效。关闭角色豁免不会影响管理员进入后台修改配置。</p>
+        </fieldset>
 
         <fieldset className="agent-policy-turnstile">
           <legend>Turnstile 人机验证</legend>

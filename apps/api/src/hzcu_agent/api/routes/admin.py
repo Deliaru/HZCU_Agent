@@ -19,6 +19,7 @@ from hzcu_agent.schemas import (
     AdminModelConfigurationUpdate,
 )
 from hzcu_agent.services.agent_policy import AgentPolicyConfigError
+from hzcu_agent.services.client_network import network_access
 from hzcu_agent.services.model_runtime import (
     ModelEndpointConfig,
     StoredModelConfigurationError,
@@ -37,7 +38,7 @@ async def get_agent_policy(
 ) -> AdminAgentPolicyResponse:
     _require_admin(principal)
     await _record_event(session, principal, "admin.agent_policy.read", {"read_only": True})
-    return await _agent_policy_response(request)
+    return await _agent_policy_response(request, principal)
 
 
 @router.put("/agent-policy", response_model=AdminAgentPolicyResponse)
@@ -73,6 +74,11 @@ async def update_agent_policy(
             outcome="succeeded",
             request_id=request_id_context.get(),
             event_metadata={
+                "network_restriction_enabled": updated.network_restriction_enabled,
+                "network_allowed_cidrs": list(updated.network_allowed_cidrs),
+                "network_admin_bypass": updated.network_admin_bypass,
+                "network_contributor_bypass": updated.network_contributor_bypass,
+                "network_denied_message": updated.network_denied_message,
                 "mode": updated.mode,
                 "agent_concurrency": updated.agent_concurrency,
                 "model_concurrency": updated.model_concurrency,
@@ -83,7 +89,7 @@ async def update_agent_policy(
         )
     )
     await session.commit()
-    return await _agent_policy_response(request)
+    return await _agent_policy_response(request, principal)
 
 
 @router.get("/model-config", response_model=AdminModelConfigurationResponse)
@@ -238,7 +244,7 @@ async def _record_event(
     await session.commit()
 
 
-async def _agent_policy_response(request: Request) -> AdminAgentPolicyResponse:
+async def _agent_policy_response(request: Request, principal) -> AdminAgentPolicyResponse:
     policy = request.app.state.policy
     data = policy.public_dict()
     usage = await policy.usage()
@@ -266,6 +272,9 @@ async def _agent_policy_response(request: Request) -> AdminAgentPolicyResponse:
     )
     return AdminAgentPolicyResponse(
         **data,
+        current_client_ip=network_access(request, principal, policy.snapshot())["ip"],
+        current_network_allowed=network_access(request, principal, policy.snapshot())["allowed"],
+        current_network_reason=network_access(request, principal, policy.snapshot())["reason"],
         today_task_count=usage["global_tasks"],
         today_model_call_count=usage["global_model_calls"],
         today_rejection_counts=rejection_counts,

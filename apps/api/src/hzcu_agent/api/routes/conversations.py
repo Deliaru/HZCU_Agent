@@ -74,7 +74,6 @@ async def create_conversation(
     session: SessionDependency,
     principal: PrincipalDependency,
 ) -> ConversationResponse:
-    _require_agent_access(principal)
     enforce_required_login(request, principal)
     enforce_csrf(request, principal)
     if principal.product_subject_id is None:
@@ -104,7 +103,6 @@ async def list_conversations(
     limit: int = Query(default=30, ge=1, le=60),
     cursor: str | None = Query(default=None, max_length=300),
 ) -> ConversationListResponse:
-    _require_agent_access(principal)
     subject_id = _require_subject(principal)
     query = select(Conversation).where(Conversation.owner_subject_id == subject_id)
     if cursor:
@@ -171,7 +169,6 @@ async def get_conversation(
     session: SessionDependency,
     principal: PrincipalDependency,
 ) -> ConversationDetailResponse:
-    _require_agent_access(principal)
     conversation = await session.get(Conversation, conversation_id)
     if conversation is None or not _can_access_conversation(conversation, principal):
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -236,7 +233,6 @@ async def patch_conversation(
     session: SessionDependency,
     principal: PrincipalDependency,
 ) -> ConversationSummaryResponse:
-    _require_agent_access(principal)
     enforce_csrf(request, principal)
     conversation = await session.get(Conversation, conversation_id)
     if conversation is None or not _can_access_conversation(conversation, principal):
@@ -262,7 +258,6 @@ async def delete_conversation(
     session: SessionDependency,
     principal: PrincipalDependency,
 ) -> None:
-    _require_agent_access(principal)
     enforce_csrf(request, principal)
     conversation = await session.get(Conversation, conversation_id)
     if conversation is None or not _can_access_conversation(conversation, principal):
@@ -298,7 +293,6 @@ async def send_message(
     session: SessionDependency,
     principal: PrincipalDependency,
 ) -> AcceptedTaskResponse:
-    _require_agent_access(principal)
     enforce_required_login(request, principal)
     enforce_csrf(request, principal)
     conversation = await session.get(Conversation, conversation_id)
@@ -426,7 +420,6 @@ async def get_task(
     session: SessionDependency,
     principal: PrincipalDependency,
 ) -> TaskResponse:
-    _require_agent_access(principal)
     task = await session.get(AgentTask, task_id)
     if task is None or not await _can_access_task(session, task, principal):
         raise HTTPException(status_code=404, detail="Task not found")
@@ -446,7 +439,6 @@ async def cancel_task(
     session: SessionDependency,
     principal: PrincipalDependency,
 ) -> TaskResponse:
-    _require_agent_access(principal)
     enforce_csrf(request, principal)
     task = await session.get(AgentTask, task_id)
     if task is None or not await _can_access_task(session, task, principal):
@@ -522,7 +514,6 @@ async def retry_task(
     session: SessionDependency,
     principal: PrincipalDependency,
 ) -> AcceptedTaskResponse:
-    _require_agent_access(principal)
     enforce_csrf(request, principal)
     parent = await session.get(AgentTask, task_id)
     if parent is None or not await _can_access_task(session, parent, principal):
@@ -565,7 +556,6 @@ async def reverify_answer(
     session: SessionDependency,
     principal: PrincipalDependency,
 ) -> AcceptedTaskResponse:
-    _require_agent_access(principal)
     enforce_csrf(request, principal)
     answer = await session.get(AnswerRecord, answer_id)
     parent = await session.get(AgentTask, answer.task_id) if answer is not None else None
@@ -605,7 +595,6 @@ async def stream_task_events(
     after: int = Query(default=0, ge=0),
     last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
 ) -> EventSourceResponse:
-    _require_agent_access(principal)
     task = await session.get(AgentTask, task_id)
     if task is None or not await _can_access_task(session, task, principal):
         raise HTTPException(status_code=404, detail="Task not found")
@@ -640,7 +629,6 @@ async def list_answer_evidence(
     session: SessionDependency,
     principal: PrincipalDependency,
 ) -> list[Evidence]:
-    _require_agent_access(principal)
     answer = await session.get(AnswerRecord, answer_id)
     task = await session.get(AgentTask, answer.task_id) if answer is not None else None
     if task is None or not await _can_access_task(session, task, principal):
@@ -663,7 +651,6 @@ async def get_evidence(
     session: SessionDependency,
     principal: PrincipalDependency,
 ) -> Evidence:
-    _require_agent_access(principal)
     record = await session.get(EvidenceRecord, evidence_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Evidence not found")
@@ -680,7 +667,6 @@ async def get_answer(
     session: SessionDependency,
     principal: PrincipalDependency,
 ) -> AnswerResponse:
-    _require_agent_access(principal)
     answer = await session.get(AnswerRecord, answer_id)
     if answer is None:
         raise HTTPException(status_code=404, detail="Answer not found")
@@ -903,17 +889,6 @@ def _require_subject(principal: RequestPrincipal) -> str:
     if principal.product_subject_id is None:
         raise HTTPException(status_code=503, detail="Product identity unavailable")
     return principal.product_subject_id
-
-
-def _require_agent_access(principal: RequestPrincipal) -> None:
-    if principal.authenticated and principal.role == "contributor":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": "CONTRIBUTOR_AGENT_ACCESS_DENIED",
-                "message": "贡献者账号仅可浏览问题广场并提交授权回答。",
-            },
-        )
 
 
 def _can_access_conversation(

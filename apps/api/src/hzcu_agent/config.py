@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     app_name: str = "HZCU Campus Agent"
     environment: Literal["development", "test", "production"] = "development"
     api_prefix: str = "/api/v1"
+    network_trusted_proxy_cidrs: str = ""
     database_url: str = "sqlite+aiosqlite:///./data/hzcu_agent.db"
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     log_level: str = "INFO"

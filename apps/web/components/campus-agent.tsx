@@ -890,6 +890,12 @@ function useCampusAgentController(theme: "minimal" | "character") {
       setError("公众提问暂时暂停，管理员仍可继续测试。");
       return;
     }
+    if (access.network_allowed === false) {
+      setStage("idle");
+      setStatusText("当前网络暂未开放 Agent 提问");
+      setError(access.network_denied_message ?? "当前网络暂未开放 Agent 提问。");
+      return;
+    }
     if (access.verification_required) {
       if (!access.turnstile_site_key) {
         setStage("idle");
@@ -984,6 +990,8 @@ function useCampusAgentController(theme: "minimal" | "character") {
     try {
       workStartedAtRef.current = Date.now();
       shouldFollowDialogueRef.current = true;
+      const access = await refreshAgentAccess();
+      if (access.network_allowed === false) throw new Error(access.network_denied_message ?? "当前网络暂未开放 Agent 提问。");
       const task = await retryTask(failedTaskId);
       openTaskStream(task.stream_url, task.task_id, task.queue_position);
       void refreshAgentAccess();
@@ -1000,6 +1008,8 @@ function useCampusAgentController(theme: "minimal" | "character") {
     try {
       workStartedAtRef.current = Date.now();
       shouldFollowDialogueRef.current = true;
+      const access = await refreshAgentAccess();
+      if (access.network_allowed === false) throw new Error(access.network_denied_message ?? "当前网络暂未开放 Agent 提问。");
       const task = await reverifyAnswer(answerId);
       openTaskStream(task.stream_url, task.task_id, task.queue_position);
       void refreshAgentAccess();
@@ -2035,6 +2045,7 @@ function AgentAccessPanel({
   );
   return (
     <>
+      {access.network_allowed === false && <div className="agent-access-status" role="status">{access.network_denied_message ?? "当前网络暂未开放 Agent 提问。"}</div>}
       {showQuota ? (
         <div className="agent-access-status" role="status">
           <span>匿名试用</span>

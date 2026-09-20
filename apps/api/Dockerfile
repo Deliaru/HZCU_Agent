@@ -16,4 +16,4 @@ RUN python -m pip install --index-url "$PIP_INDEX_URL" .
 
 EXPOSE 8000
 
-CMD ["uvicorn", "hzcu_agent.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
+CMD ["uvicorn", "hzcu_agent.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log", "--no-proxy-headers"]

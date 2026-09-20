@@ -184,10 +184,10 @@ def test_low_evidence_question_offer_review_contributor_and_knowledge_lifecycle(
                 json={},
                 headers=_csrf(answerer),
             ).status_code
-            == 403
+            == 201
         )
-        assert answerer.get("/api/v1/agent/access").status_code == 403
-        assert answerer.get("/api/v1/profile").status_code == 403
+        assert answerer.get("/api/v1/agent/access").status_code == 200
+        assert answerer.get("/api/v1/profile").status_code == 200
         posted = answerer.post(
             f"/api/v1/questions/{question_id}/answers",
             json={"answer_markdown": "这是一份授权贡献者提供的待核验说明。"},

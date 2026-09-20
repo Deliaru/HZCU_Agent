@@ -195,6 +195,8 @@ export type AuthSession = {
 };
 
 export type AgentAccess = {
+  network_allowed?: boolean;
+  network_denied_message?: string | null;
   mode: "observe" | "enforce" | "paused";
   turnstile_enabled: boolean;
   turnstile_site_key: string | null;
@@ -359,6 +361,14 @@ export type AdminModelConfigurationUpdate = Omit<
 };
 
 export type AdminAgentPolicy = {
+  current_client_ip: string | null;
+  current_network_allowed: boolean;
+  current_network_reason: string;
+  network_restriction_enabled: boolean;
+  network_allowed_cidrs: string[];
+  network_admin_bypass: boolean;
+  network_contributor_bypass: boolean;
+  network_denied_message: string;
   mode: "observe" | "enforce" | "paused";
   subject_window_limit: number;
   subject_window_seconds: number;
@@ -391,6 +401,11 @@ export type AdminAgentPolicy = {
 };
 
 export type AdminAgentPolicyUpdate = {
+  network_restriction_enabled: boolean;
+  network_allowed_cidrs: string[];
+  network_admin_bypass: boolean;
+  network_contributor_bypass: boolean;
+  network_denied_message: string;
   mode: AdminAgentPolicy["mode"];
   subject_window_limit: number;
   subject_window_seconds: number;

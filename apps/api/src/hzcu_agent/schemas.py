@@ -129,6 +129,8 @@ class AgentVerificationResponse(BaseModel):
 
 
 class AgentAccessResponse(BaseModel):
+    network_allowed: bool = True
+    network_denied_message: str | None = None
     mode: Literal["observe", "enforce", "paused"]
     turnstile_enabled: bool
     turnstile_site_key: str | None = None
@@ -796,6 +798,18 @@ class AdminModelConfigurationUpdate(BaseModel):
 
 
 class AdminAgentPolicyResponse(BaseModel):
+    current_client_ip: str | None = None
+    current_network_allowed: bool = False
+    current_network_reason: str = "unknown"
+    network_restriction_enabled: bool = False
+    network_allowed_cidrs: list[str] = Field(default_factory=list, max_length=256)
+    network_admin_bypass: bool = True
+    network_contributor_bypass: bool = True
+    network_denied_message: str = Field(
+        default="当前网络暂未开放 Agent 提问，请切换至已开放的网络后重试。",
+        min_length=1,
+        max_length=300,
+    )
     mode: Literal["observe", "enforce", "paused"]
     subject_window_limit: int
     subject_window_seconds: int
@@ -828,6 +842,15 @@ class AdminAgentPolicyResponse(BaseModel):
 
 
 class AdminAgentPolicyUpdate(BaseModel):
+    network_restriction_enabled: bool = False
+    network_allowed_cidrs: list[str] = Field(default_factory=list, max_length=256)
+    network_admin_bypass: bool = True
+    network_contributor_bypass: bool = True
+    network_denied_message: str = Field(
+        default="当前网络暂未开放 Agent 提问，请切换至已开放的网络后重试。",
+        min_length=1,
+        max_length=300,
+    )
     mode: Literal["observe", "enforce", "paused"]
     subject_window_limit: int = Field(ge=1, le=100)
     subject_window_seconds: int = Field(ge=1, le=86400)
