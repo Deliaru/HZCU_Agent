@@ -10,7 +10,9 @@ export type Announcement = {
 };
 
 export const getUnreadAnnouncements = () => apiFetch<Announcement[]>("/announcements/unread", { cache: "no-store" });
-export const getAdminAnnouncements = () => apiFetch<Announcement[]>("/admin/announcements", { cache: "no-store" });
+export type AdminAnnouncement = Announcement & { read_count: number };
+
+export const getAdminAnnouncements = () => apiFetch<AdminAnnouncement[]>("/admin/announcements", { cache: "no-store" });
 export const publishAnnouncement = (title: string, content: string) => apiFetch<Announcement>("/admin/announcements", {
   method: "POST", body: JSON.stringify({ title, content }),
 });

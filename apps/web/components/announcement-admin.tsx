@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { type Announcement, getAdminAnnouncements, publishAnnouncement, withdrawAnnouncement } from "@/lib/api";
+import { type AdminAnnouncement, getAdminAnnouncements, publishAnnouncement, withdrawAnnouncement } from "@/lib/api";
 
 export function AnnouncementAdmin() {
-  const [items, setItems] = useState<Announcement[]>([]);
+  const [items, setItems] = useState<AdminAnnouncement[]>([]);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [busy, setBusy] = useState(false);
@@ -28,7 +28,7 @@ export function AnnouncementAdmin() {
     finally { setBusy(false); }
   }
 
-  async function withdraw(item: Announcement) {
+  async function withdraw(item: AdminAnnouncement) {
     if (busy || !window.confirm(`撤回“${item.title}”？撤回后不再向进站用户展示。`)) return;
     setBusy(true); setError(""); setNotice("");
     try { await withdrawAnnouncement(item.id); setNotice("公告已撤回。"); await load(); }
@@ -46,10 +46,12 @@ export function AnnouncementAdmin() {
     </form>
     {error && <p role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
     <h3>最近发布（最多 200 条）</h3>
+    <p>已读人数按确认已读的账号或匿名设备身份去重；同一身份重复确认不累加，清除 Cookie 或更换身份可能重复计数。刷新列表可更新统计。</p>
     <button type="button" disabled={busy} onClick={() => { setError(""); void load(); }}>刷新列表</button>
     {!items.length && <p>暂无公告。</p>}
     {items.map((item) => <article key={item.id}>
       <h3>{item.title}</h3><small>{item.active ? "发布中" : "已撤回"} · {new Date(item.created_at).toLocaleString("zh-CN")}</small>
+      <p><strong>已读人数：{item.read_count.toLocaleString("zh-CN")}</strong></p>
       <p className="announcement-preview">{item.content}</p>
       {item.active && <button type="button" disabled={busy} onClick={() => void withdraw(item)}>撤回公告</button>}
     </article>)}

@@ -3,7 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import exists, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +29,10 @@ class AnnouncementResponse(BaseModel):
     content: str
     active: bool
     created_at: datetime
+
+
+class AdminAnnouncementResponse(AnnouncementResponse):
+    read_count: int = 0
 
 
 def require_admin(principal: RequestPrincipal) -> None:
@@ -91,20 +95,27 @@ async def mark_read(announcement_id: str, request: Request, session: Session, pr
     return Response(status_code=204)
 
 
-@router.get("/admin/announcements", response_model=list[AnnouncementResponse])
+@router.get("/admin/announcements", response_model=list[AdminAnnouncementResponse])
 async def admin_list(session: Session, principal: Principal, response: Response):
     require_admin(principal)
     response.headers["Cache-Control"] = "no-store"
-    return (
-        await session.scalars(
-            select(Announcement)
-            .order_by(
-                Announcement.created_at.desc(),
-                Announcement.id.desc(),
-            )
-            .limit(200)
+    read_count = (
+        select(func.count(AnnouncementRead.subject_id))
+        .where(AnnouncementRead.announcement_id == Announcement.id)
+        .correlate(Announcement)
+        .scalar_subquery()
+    )
+    rows = await session.execute(
+        select(Announcement, read_count.label("read_count"))
+        .order_by(Announcement.created_at.desc(), Announcement.id.desc())
+        .limit(200)
+    )
+    return [
+        AdminAnnouncementResponse(
+            **AnnouncementResponse.model_validate(item).model_dump(), read_count=count
         )
-    ).all()
+        for item, count in rows
+    ]
 
 
 @router.post("/admin/announcements", response_model=AnnouncementResponse, status_code=201)

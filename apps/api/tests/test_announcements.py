@@ -78,31 +78,50 @@ def test_announcement_publish_read_isolation_withdraw_and_audit(tmp_path, monkey
         assert unread.headers["cache-control"] == "no-store"
         assert [a["id"] for a in unread.json()] == [first, second]
         assert unread.json()[0]["content"] == body["content"]
+        assert "read_count" not in unread.json()[0]
+        assert {a["id"]: a["read_count"] for a in admin.get(endpoint).json()} == {
+            first: 0,
+            second: 0,
+        }
         ack = f"/api/v1/announcements/{first}/read"
         assert visitor.post(ack).status_code == 403
         assert visitor.post(ack, headers=csrf(visitor)).status_code == 204
         assert visitor.post(ack, headers=csrf(visitor)).status_code == 204
         assert [a["id"] for a in visitor.get("/api/v1/announcements/unread").json()] == [second]
         assert len(other.get("/api/v1/announcements/unread").json()) == 2
+        assert {a["id"]: a["read_count"] for a in admin.get(endpoint).json()} == {
+            first: 1,
+            second: 0,
+        }
+        assert other.post(ack, headers=csrf(other)).status_code == 204
+        assert {a["id"]: a["read_count"] for a in admin.get(endpoint).json()} == {
+            first: 2,
+            second: 0,
+        }
         assert (
             visitor.post(f"{endpoint}/{second}/withdraw", headers=csrf(visitor)).status_code == 404
         )
         assert admin.post(f"{endpoint}/{second}/withdraw", headers=csrf(admin)).status_code == 204
         assert visitor.get("/api/v1/announcements/unread").json() == []
-        assert len(other.get("/api/v1/announcements/unread").json()) == 1
+        assert len(other.get("/api/v1/announcements/unread").json()) == 0
         assert admin.get(endpoint).json()[0]["active"] is False
         assert (
             visitor.post("/api/v1/announcements/missing/read", headers=csrf(visitor)).status_code
             == 404
         )
+        assert admin.post(f"{endpoint}/{first}/withdraw", headers=csrf(admin)).status_code == 204
+        assert {a["id"]: a["read_count"] for a in admin.get(endpoint).json()} == {
+            first: 2,
+            second: 0,
+        }
         with sqlite3.connect(path) as db:
-            assert db.execute("select count(*) from announcement_reads").fetchone()[0] == 1
+            assert db.execute("select count(*) from announcement_reads").fetchone()[0] == 2
             assert (
                 db.execute(
                     "select count(*) from security_audit_events "
                     "where event_type like 'admin.announcement.%'"
                 ).fetchone()[0]
-                == 3
+                == 4
             )
         visitor.close()
         other.close()
